@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>表情包制作器 - Demo</title>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=ZCOOL+KuaiLe&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#1a1a2e;color:#eee;min-height:100vh;display:flex;justify-content:center;align-items:center}
+.app{width:100%;max-width:420px;min-height:100vh;display:flex;flex-direction:column;background:#1a1a2e}
+
+/* Steps */
+.steps{display:flex;padding:10px 16px;gap:6px;align-items:center;justify-content:center}
+.step{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:#2a2a3e;color:#888;transition:all .3s}
+.step.active{background:#7c4dff;color:#fff;box-shadow:0 0 12px rgba(124,77,255,.5)}
+.step.done{background:#4caf50;color:#fff}
+.step-line{flex:1;max-width:40px;height:2px;background:#2a2a3e}
+.step-line.done{background:#4caf50}
+
+/* Content */
+.content{flex:1;display:flex;flex-direction:column;padding:0 12px;overflow-y:auto}
+.preview-area{position:relative;width:100%;aspect-ratio:1/1;background:#000;border-radius:10px;overflow:hidden;margin-bottom:8px}
+.preview-area video,.preview-area canvas,.preview-area img{width:100%;height:100%;object-fit:contain}
+.text-overlay{position:absolute;cursor:grab;user-select:none;white-space:nowrap;text-shadow:2px 2px 4px rgba(0,0,0,.7),-1px -1px 2px rgba(0,0,0,.5);pointer-events:auto;line-height:1.2}
+.text-overlay:active{cursor:grabbing}
+
+/* Controls */
+.controls{display:flex;flex-direction:column;gap:6px}
+.control-group{background:#2a2a3e;border-radius:8px;padding:10px}
+.control-group label{display:block;font-size:11px;color:#aaa;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+input[type=range]{width:100%;accent-color:#7c4dff}
+input[type=text],select{width:100%;padding:8px 10px;border-radius:6px;border:1px solid #444;background:#1a1a2e;color:#eee;font-size:14px;outline:none}
+input[type=text]:focus,select:focus{border-color:#7c4dff}
+select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'%3E%3C/path%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px}
+
+/* Range labels */
+.range-labels{display:flex;justify-content:space-between;font-size:11px;color:#888;margin-top:4px}
+
+/* Color picker */
+.color-options{display:flex;gap:8px;flex-wrap:wrap}
+.color-dot{width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all .2s}
+.color-dot.selected{border-color:#fff;transform:scale(1.15);box-shadow:0 0 8px rgba(255,255,255,.4)}
+
+/* Font selector */
+.font-options{display:flex;gap:6px;flex-wrap:wrap}
+.font-btn{padding:5px 12px;border-radius:6px;border:1px solid #444;background:#1a1a2e;color:#ccc;font-size:12px;cursor:pointer;transition:all .2s}
+.font-btn.selected{border-color:#7c4dff;background:#7c4dff;color:#fff}
+
+/* Upload zone */
+.upload-zone{border:2px dashed #555;border-radius:10px;padding:24px 16px;text-align:center;cursor:pointer;transition:all .2s}
+.upload-zone:hover{border-color:#7c4dff;background:rgba(124,77,255,.05)}
+.upload-zone .icon{font-size:36px;margin-bottom:8px}
+.upload-zone .hint{color:#888;font-size:12px}
+
+/* Trim timeline */
+.trim-track{position:relative;height:48px;border-radius:8px;overflow:hidden;cursor:default;user-select:none;touch-action:none}
+.trim-track canvas{position:absolute;top:0;left:0;width:100%;height:100%}
+.trim-mask-left,.trim-mask-right{position:absolute;top:0;height:100%;background:rgba(0,0,0,.55)}
+.trim-mask-left{left:0}
+.trim-mask-right{right:0}
+.trim-range-border{position:absolute;top:0;height:100%;border-top:3px solid #7c4dff;border-bottom:3px solid #7c4dff;pointer-events:none}
+.trim-handle{position:absolute;top:50%;width:20px;height:56px;transform:translate(-50%,-50%);background:#7c4dff;border-radius:4px;cursor:ew-resize;z-index:3;display:flex;align-items:center;justify-content:center;box-shadow:0 0 6px rgba(124,77,255,.5);touch-action:none}
+.trim-handle::after{content:'';width:2px;height:18px;background:rgba(255,255,255,.6);border-radius:1px}
+.trim-time-label{position:absolute;top:-22px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:700;color:#7c4dff;white-space:nowrap;pointer-events:none}
+
+/* Buttons */
+.btn{padding:12px 20px;border-radius:8px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-primary{background:#7c4dff;color:#fff;width:100%}
+.btn-primary:hover{background:#6a3de8}
+.btn-primary:disabled{background:#444;color:#888;cursor:not-allowed}
+.btn-outline{background:transparent;border:1px solid #7c4dff;color:#7c4dff}
+.actions{padding:10px 12px;display:flex;gap:8px}
+
+/* Progress */
+.progress-bar{height:6px;background:#2a2a3e;border-radius:3px;overflow:hidden;margin-bottom:8px}
+.progress-fill{height:100%;background:#7c4dff;transition:width .3s}
+
+/* Toast */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#4caf50;color:#fff;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;z-index:1000;animation:fadeInOut 2.5s forwards}
+@keyframes fadeInOut{0%{opacity:0;transform:translateX(-50%) translateY(20px)}15%{opacity:1;transform:translateX(-50%) translateY(0)}85%{opacity:1}100%{opacity:0}}
+.toast.error{background:#f44336}
+
+/* Hide file input */
+#fileInput{display:none}
+
+/* Empty state for video */
+.empty-video{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:linear-gradient(135deg,#1e2a3a 0%,#2a1a3e 50%,#1a2a2e 100%)}
+.empty-video .icon{font-size:64px;margin-bottom:8px;filter:grayscale(0)}
+.empty-video div:last-child{color:#bbb;font-size:14px}
+
+/* Loading spinner */
+.spinner{width:40px;height:40px;border:3px solid #2a2a3e;border-top-color:#7c4dff;border-radius:50%;animation:spin .8s linear infinite;margin:20px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="steps" id="stepIndicator"></div>
+  <div class="content" id="content"></div>
+  <div class="actions" id="actions"></div>
+</div>
+<input type="file" id="fileInput" accept="video/*">
+<input type="file" id="photoInput" accept="image/*" style="display:none">
+
+<script>
+const state = {
+  step: 0,
+  mediaType: 'video', // 'video' | 'photo'
+  videoFile: null,
+  videoUrl: null,
+  videoDuration: 0,
+  photoFile: null,
+  photoUrl: null,
+  trimStart: 0,
+  trimEnd: 0,
+  textContent: '',
+  textFont: 'SimHei, Microsoft YaHei, sans-serif',
+  textWeight: '700',
+  textColor: '#FFFFFF',
+  textX: 0.5,
+  textY: 0.5,
+  gifBlob: null
+};
+
+const fonts = [
+  { label: '黑体', value: 'SimHei, Microsoft YaHei, sans-serif', weight: '700' },
+  { label: '楷体', value: 'KaiTi, STKaiti, serif', weight: '700' },
+  { label: '仿宋', value: 'FangSong, STFangsong, serif', weight: '700' },
+  { label: '默认', value: 'Arial, sans-serif', weight: '700' },
+  { label: '粗黑搞怪', value: 'Impact, Arial Black, Noto Sans SC, sans-serif', weight: '900' },
+  { label: '手写涂鸦', value: 'Caveat, Comic Sans MS, STXingkai, cursive', weight: '700' },
+  { label: '萌萌圆体', value: 'ZCOOL KuaiLe, Comic Neue, PingFang SC, sans-serif', weight: '400' },
+  { label: '圆体', value: 'Yuanti SC, PingFang SC, sans-serif', weight: '700' },
+];
+
+const colors = ['#FFFFFF','#000000','#FF1744','#FFD600','#2979FF','#00E676'];
+
+let videoEl = null;
+let isDragging = false;
+let dragStart = { x: 0, y: 0 };
+let textStartPos = { x: 0, y: 0 };
+
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+
+function updateSteps() {
+  const isPhoto = state.mediaType === 'photo';
+  const steps = isPhoto
+    ? ['选取素材', '添加文字', '预览导出']
+    : ['选取素材', '裁剪时间', '添加文字', '预览导出'];
+
+  let html = steps.map((label, i) => {
+    let cls = 'step';
+    if (i === state.step) cls += ' active';
+    else if (i < state.step) cls += ' done';
+    return `<div class="${cls}" data-step="${i}">${i + 1}</div>`;
+  }).join('<div class="step-line"></div>');
+
+  $('#stepIndicator').innerHTML = html;
+  $$('.step-line').forEach((el,i) => el.classList.toggle('done', i < state.step));
+}
+
+function showToast(msg, error) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (error ? ' error' : '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2600);
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60), s = (sec % 60).toFixed(1);
+  return `${m}:${s.padStart(4,'0')}`;
+}
+
+// ==== STEP 0: Media Selection ====
+function renderStep0() {
+  const hasMedia = state.mediaType === 'video' ? !!state.videoFile : !!state.photoFile;
+  const selectedLabel = hasMedia
+    ? (state.mediaType === 'video'
+      ? `已选择视频: ${state.videoFile.name} (${formatTime(state.videoDuration)})`
+      : `已选择照片: ${state.photoFile.name}`)
+    : '';
+
+  $('#content').innerHTML = `
+    <div class="preview-area" id="previewArea">
+      <div class="empty-video">
+        <div class="icon">${state.mediaType === 'photo' ? '🖼' : '🎬'}</div>
+        <div>${hasMedia ? '已选取素材' : '点击下方按钮选择素材'}</div>
+      </div>
+    </div>
+    <div class="controls">
+      <div style="display:flex;gap:10px">
+        <div class="upload-zone" id="uploadVideo" style="flex:1">
+          <div class="icon">🎬</div>
+          <div style="font-size:14px;margin-bottom:2px">选取视频</div>
+          <div class="hint">MP4 / MOV</div>
+        </div>
+        <div class="upload-zone" id="uploadPhoto" style="flex:1">
+          <div class="icon">🖼</div>
+          <div style="font-size:14px;margin-bottom:2px">选取照片</div>
+          <div class="hint">JPG / PNG</div>
+        </div>
+      </div>
+      ${hasMedia ? `
+      <div class="control-group" style="margin-top:6px">
+        <label>已选择</label>
+        <div style="font-size:13px;color:#ccc">${selectedLabel}</div>
+      </div>
+      ` : ''}
+    </div>`;
+  $('#actions').innerHTML = `
+    <button class="btn btn-primary" id="btnNext" ${hasMedia ? '' : 'disabled'}>下一步${state.mediaType === 'photo' ? '：添加文字' : '：裁剪时间'}</button>`;
+
+  $('#uploadVideo').onclick = () => selectVideo();
+  $('#uploadPhoto').onclick = () => selectPhoto();
+  const btnNext = $('#btnNext');
+  if (!hasMedia) btnNext.onclick = () => showToast('请先选择素材', true);
+  else btnNext.onclick = () => { state.step = 1; render(); };
+}
+
+function selectVideo() {
+  state.mediaType = 'video';
+  if (state.photoUrl) { URL.revokeObjectURL(state.photoUrl); state.photoUrl = null; state.photoFile = null; }
+  $('#fileInput').click();
+}
+
+function selectPhoto() {
+  state.mediaType = 'photo';
+  if (state.videoUrl) { URL.revokeObjectURL(state.videoUrl); state.videoUrl = null; state.videoFile = null; state.videoDuration = 0; }
+  $('#photoInput').click();
+}
+
+// ==== STEP 1: Video Trimming ====
+function renderStep1() {
+  const maxTrim = Math.min(3, state.videoDuration);
+  if (state.trimEnd === 0) {
+    state.trimStart = 0;
+    state.trimEnd = Math.min(maxTrim, state.videoDuration);
+  }
+
+  $('#content').innerHTML = `
+    <div class="preview-area" id="previewArea">
+      <video id="videoPlayer" src="${state.videoUrl}" muted loop></video>
+    </div>
+    <div class="controls">
+      <div class="control-group">
+        <label>裁剪范围（最长3秒）</label>
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px">
+          <span>起始: <b id="trimStartLabel">${formatTime(state.trimStart)}</b></span>
+          <span>时长: <b id="trimDurLabel">${(state.trimEnd - state.trimStart).toFixed(1)}s</b></span>
+          <span>结束: <b id="trimEndLabel">${formatTime(state.trimEnd)}</b></span>
+        </div>
+        <div class="trim-track" id="trimTrack" style="position:relative">
+          <canvas id="thumbCanvas"></canvas>
+          <div class="trim-mask-left" id="maskLeft" style="left:0;width:${state.trimStart / state.videoDuration * 100}%"></div>
+          <div class="trim-mask-right" id="maskRight" style="right:0;width:${(1 - state.trimEnd / state.videoDuration) * 100}%"></div>
+          <div class="trim-range-border" id="rangeBorder" style="left:${state.trimStart / state.videoDuration * 100}%;width:${(state.trimEnd - state.trimStart) / state.videoDuration * 100}%"></div>
+          <div class="trim-handle" id="handleStart" style="left:${state.trimStart / state.videoDuration * 100}%">
+            <div class="trim-time-label">${formatTime(state.trimStart)}</div>
+          </div>
+          <div class="trim-handle" id="handleEnd" style="left:${state.trimEnd / state.videoDuration * 100}%">
+            <div class="trim-time-label">${formatTime(state.trimEnd)}</div>
+          </div>
+        </div>
+      </div>
+      <div class="control-group" style="text-align:center">
+        <button class="btn btn-outline" id="btnPreview" style="width:auto;display:inline-block">▶ 预览片段</button>
+      </div>
+    </div>`;
+  $('#actions').innerHTML = `
+    <button class="btn btn-outline" id="btnBack">上一步</button>
+    <button class="btn btn-primary" id="btnNext">下一步：添加文字</button>`;
+
+  videoEl = $('#videoPlayer');
+  videoEl.currentTime = state.trimStart;
+  videoEl.ontimeupdate = () => {
+    if (videoEl.currentTime >= state.trimEnd) { videoEl.pause(); videoEl.currentTime = state.trimStart; }
+  };
+
+  const track = $('#trimTrack');
+  const handleStart = $('#handleStart');
+  const handleEnd = $('#handleEnd');
+  const maskLeft = $('#maskLeft');
+  const maskRight = $('#maskRight');
+  const rangeBorder = $('#rangeBorder');
+  let activeHandle = null;
+  let dragging = false;
+
+  function updateUI() {
+    const pctStart = state.trimStart / state.videoDuration * 100;
+    const pctEnd = state.trimEnd / state.videoDuration * 100;
+    handleStart.style.left = pctStart + '%';
+    handleEnd.style.left = pctEnd + '%';
+    maskLeft.style.width = pctStart + '%';
+    maskRight.style.width = (100 - pctEnd) + '%';
+    rangeBorder.style.left = pctStart + '%';
+    rangeBorder.style.width = (pctEnd - pctStart) + '%';
+    handleStart.querySelector('.trim-time-label').textContent = formatTime(state.trimStart);
+    handleEnd.querySelector('.trim-time-label').textContent = formatTime(state.trimEnd);
+    $('#trimStartLabel').textContent = formatTime(state.trimStart);
+    $('#trimEndLabel').textContent = formatTime(state.trimEnd);
+    $('#trimDurLabel').textContent = (state.trimEnd - state.trimStart).toFixed(1) + 's';
+    videoEl.currentTime = state.trimStart;
+  }
+
+  function getPosFromEvent(e) {
+    const rect = track.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    return Math.max(0, Math.min(1, x / rect.width)) * state.videoDuration;
+  }
+
+  function onPointerDown(e) {
+    const target = e.target.closest('.trim-handle');
+    if (!target) return;
+    activeHandle = target.id === 'handleStart' ? 'start' : 'end';
+    dragging = true;
+    target.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
+
+  function onPointerMove(e) {
+    if (!dragging || !activeHandle) return;
+    const pos = getPosFromEvent(e);
+    if (activeHandle === 'start') {
+      state.trimStart = Math.max(0, Math.min(pos, state.trimEnd - 0.1));
+      if (state.trimEnd - state.trimStart > maxTrim) {
+        state.trimEnd = Math.min(state.trimStart + maxTrim, state.videoDuration);
+      }
+    } else {
+      state.trimEnd = Math.min(state.videoDuration, Math.max(pos, state.trimStart + 0.1));
+      if (state.trimEnd - state.trimStart > maxTrim) {
+        state.trimStart = Math.max(0, state.trimEnd - maxTrim);
+      }
+    }
+    updateUI();
+  }
+
+  function onPointerUp(e) {
+    if (dragging) {
+      const h = activeHandle === 'start' ? handleStart : handleEnd;
+      h.releasePointerCapture(e.pointerId);
+    }
+    dragging = false;
+    activeHandle = null;
+  }
+
+  handleStart.onpointerdown = onPointerDown;
+  handleEnd.onpointerdown = onPointerDown;
+  track.onpointermove = onPointerMove;
+  track.onpointerup = onPointerUp;
+  track.onpointerleave = onPointerUp;
+
+  $('#btnPreview').onclick = () => {
+    videoEl.currentTime = state.trimStart;
+    videoEl.play();
+    const checkEnd = () => {
+      if (videoEl.currentTime >= state.trimEnd) { videoEl.pause(); videoEl.currentTime = state.trimStart; }
+      else requestAnimationFrame(checkEnd);
+    };
+    requestAnimationFrame(checkEnd);
+  };
+
+  $('#btnBack').onclick = () => { state.step = 0; render(); };
+  $('#btnNext').onclick = () => { state.step = 2; render(); };
+
+  generateThumbnails();
+}
+
+async function generateThumbnails() {
+  const canvas = $('#thumbCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  canvas.width = 360;
+  canvas.height = 48;
+  const count = 20;
+  const w = canvas.width / count;
+  const video = document.createElement('video');
+  video.src = state.videoUrl;
+  video.muted = true;
+  video.preload = 'metadata';
+  await new Promise(r => { video.onloadedmetadata = r; });
+  for (let i = 0; i < count; i++) {
+    video.currentTime = (i / count) * Math.min(state.videoDuration, 20);
+    await new Promise(r => { video.onseeked = r; });
+    ctx.drawImage(video, i * w, 0, w, 48);
+  }
+  video.remove();
+}
+
+// ==== STEP 2: Text Overlay ====
+function renderStep2() {
+  const isPhoto = state.mediaType === 'photo';
+  const mediaEl = isPhoto
+    ? `<img src="${state.photoUrl}" style="width:100%;height:100%;object-fit:contain" id="mediaPlayer">`
+    : `<video id="mediaPlayer" src="${state.videoUrl}" muted style="width:100%;height:100%;object-fit:contain"></video>`;
+
+  $('#content').innerHTML = `
+    <div class="preview-area" id="previewArea" style="position:relative;overflow:hidden">
+      ${mediaEl}
+      <div class="text-overlay" id="textOverlay" style='
+        font-family:${state.textFont};
+        color:${state.textColor};
+        font-weight:${state.textWeight};
+        font-size:clamp(28px,8vw,56px);
+        left:${state.textX * 100}%;
+        top:${state.textY * 100}%;
+        transform:translate(-50%,-50%);
+      '>${state.textContent || '输入文字'}</div>
+    </div>
+    <div class="controls">
+      <div class="control-group">
+        <label>文字内容（最多6字）</label>
+        <input type="text" id="textInput" value="${state.textContent}" placeholder="输入表情包配文..." maxlength="6">
+        <div style="font-size:11px;color:#888;margin-top:4px;text-align:right" id="charCount">${state.textContent.length}/6</div>
+      </div>
+      <div class="control-group">
+        <label>字体</label>
+        <div class="font-options">${fonts.map((f,i) => `
+          <button class="font-btn${state.textFont===f.value?' selected':''}" data-font="${f.value}" data-weight="${f.weight}">${f.label}</button>
+        `).join('')}</div>
+      </div>
+      <div class="control-group">
+        <label>颜色</label>
+        <div class="color-options">${colors.map(c => `
+          <div class="color-dot${state.textColor===c?' selected':''}" data-color="${c}" style="background:${c}"></div>
+        `).join('')}</div>
+      </div>
+      <div style="text-align:center;font-size:12px;color:#666">💡 拖拽文字调整位置 · 双击居中</div>
+    </div>`;
+  $('#actions').innerHTML = `
+    <button class="btn btn-outline" id="btnBack">上一步</button>
+    <button class="btn btn-primary" id="btnNext">下一步：预览导出</button>`;
+
+  if (!isPhoto) {
+    videoEl = $('#mediaPlayer');
+    videoEl.currentTime = state.trimStart;
+  }
+
+  const overlay = $('#textOverlay');
+  const textInput = $('#textInput');
+
+  textInput.oninput = () => {
+    state.textContent = textInput.value;
+    overlay.textContent = state.textContent || '输入文字';
+    $('#charCount').textContent = state.textContent.length + '/6';
+  };
+
+  $$('.font-btn').forEach(btn => {
+    btn.onclick = () => {
+      state.textFont = btn.dataset.font;
+      state.textWeight = btn.dataset.weight || '700';
+      overlay.style.fontFamily = state.textFont;
+      overlay.style.fontWeight = state.textWeight;
+      $$('.font-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    };
+  });
+
+  $$('.color-dot').forEach(dot => {
+    dot.onclick = () => {
+      state.textColor = dot.dataset.color;
+      overlay.style.color = state.textColor;
+      $$('.color-dot').forEach(d => d.classList.remove('selected'));
+      dot.classList.add('selected');
+    };
+  });
+
+  // Drag
+  overlay.onpointerdown = (e) => {
+    isDragging = true;
+    overlay.setPointerCapture(e.pointerId);
+    dragStart = { x: e.clientX, y: e.clientY };
+    textStartPos = { x: state.textX * 100, y: state.textY * 100 };
+    e.preventDefault();
+  };
+  overlay.onpointermove = (e) => {
+    if (!isDragging) return;
+    const rect = $('#previewArea').getBoundingClientRect();
+    const dx = (e.clientX - dragStart.x) / rect.width * 100;
+    const dy = (e.clientY - dragStart.y) / rect.height * 100;
+    let nx = textStartPos.x + dx, ny = textStartPos.y + dy;
+    nx = Math.max(5, Math.min(95, nx));
+    ny = Math.max(5, Math.min(95, ny));
+    state.textX = nx / 100;
+    state.textY = ny / 100;
+    overlay.style.left = nx + '%';
+    overlay.style.top = ny + '%';
+  };
+  overlay.onpointerup = () => { isDragging = false; };
+  overlay.ondblclick = () => {
+    state.textX = 0.5; state.textY = 0.5;
+    overlay.style.left = '50%';
+    overlay.style.top = '50%';
+  };
+
+  $('#btnBack').onclick = () => { state.step = isPhoto ? 0 : 1; render(); };
+  $('#btnNext').onclick = () => { state.step = isPhoto ? 2 : 3; render(); };
+}
+
+// ==== STEP 3: Preview & Export ====
+function renderStep3() {
+  const isPhoto = state.mediaType === 'photo';
+  const mediaEl = isPhoto
+    ? `<img src="${state.photoUrl}" style="width:100%;height:100%;object-fit:contain" id="mediaPlayer">`
+    : `<video id="mediaPlayer" src="${state.videoUrl}" muted></video>`;
+
+  const infoSection = isPhoto
+    ? `<div style="font-size:13px;color:#ccc">照片模式: 输出静态图片</div>`
+    : `<div style="font-size:13px;color:#ccc">视频片段: ${formatTime(state.trimStart)} ~ ${formatTime(state.trimEnd)} (${(state.trimEnd - state.trimStart).toFixed(1)}s)</div>`;
+
+  const exportBtnLabel = isPhoto ? '🖼 导出图片' : '🎞 导出 GIF';
+  const exportHint = isPhoto
+    ? '预计输出: PNG, 480px宽'
+    : `预计输出: 8-10fps, 480p, 约${Math.round((state.trimEnd - state.trimStart) * 8)}帧`;
+
+  $('#content').innerHTML = `
+    <div class="preview-area" id="previewArea">
+      ${mediaEl}
+      <div class="text-overlay" id="textOverlay" style='
+        font-family:${state.textFont};
+        color:${state.textColor};
+        font-weight:${state.textWeight};
+        font-size:clamp(28px,8vw,56px);
+        left:${state.textX * 100}%;
+        top:${state.textY * 100}%;
+        transform:translate(-50%,-50%);
+        pointer-events:none;
+      '>${state.textContent || ''}</div>
+    </div>
+    <div class="controls">
+      <div class="control-group">
+        <label>导出预览</label>
+        ${infoSection}
+        ${state.textContent ? `<div style="font-size:13px;color:#ccc;margin-top:4px">文字: "${state.textContent}"</div>` : ''}
+      </div>
+      <div class="control-group" style="text-align:center" id="exportStatus">
+        <button class="btn btn-primary" id="btnExport" style="width:100%">${exportBtnLabel}</button>
+        <div style="font-size:12px;color:#666;margin-top:8px">${exportHint}</div>
+      </div>
+    </div>`;
+  $('#actions').innerHTML = `
+    <button class="btn btn-outline" id="btnBack">上一步</button>
+    <button class="btn btn-outline" id="btnDone" style="display:none">重新开始</button>`;
+
+  if (!isPhoto) {
+    videoEl = $('#mediaPlayer');
+    videoEl.currentTime = state.trimStart;
+    videoEl.play();
+    videoEl.ontimeupdate = () => {
+      if (videoEl.currentTime >= state.trimEnd) { videoEl.pause(); videoEl.currentTime = state.trimStart; videoEl.play(); }
+    };
+  }
+
+  const overlay = $('#textOverlay');
+  if (!state.textContent) overlay.style.display = 'none';
+
+  $('#btnBack').onclick = () => { state.step = isPhoto ? 1 : 2; render(); };
+
+  $('#btnExport').onclick = isPhoto ? exportImage : exportGif;
+}
+
+async function exportGif() {
+  const statusDiv = $('#exportStatus');
+  statusDiv.innerHTML = `<div class="spinner"></div><div style="color:#ccc;margin-top:8px">正在生成GIF...</div><div class="progress-bar" style="margin-top:12px"><div class="progress-fill" id="progFill" style="width:0%"></div></div><div style="font-size:12px;color:#888;margin-top:4px" id="progText">准备中...</div>`;
+
+  const trimDuration = state.trimEnd - state.trimStart;
+  const fps = 8;
+  const totalFrames = Math.round(trimDuration * fps);
+  const targetW = 480;
+
+  const video = document.createElement('video');
+  video.src = state.videoUrl;
+  video.muted = true;
+  video.preload = 'auto';
+  video.currentTime = state.trimStart;
+  await new Promise(r => { video.onseeked = r; });
+
+  const aspect = video.videoHeight / video.videoWidth;
+  const w = targetW;
+  const h = Math.round(w * aspect);
+
+  const gif = new GIF({
+    workers: 2,
+    quality: 10,
+    width: w,
+    height: h,
+    workerScript: 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js'
+  });
+
+  const frameCanvas = document.createElement('canvas');
+  frameCanvas.width = w;
+  frameCanvas.height = h;
+  const ctx = frameCanvas.getContext('2d');
+
+  const fontScale = w / 420;
+  const fontSize = Math.round(clamp(18, 36, 24) * (w / 360));
+
+  function clamp(min, max, val) { return Math.max(min, Math.min(max, val)); }
+
+  for (let i = 0; i < totalFrames; i++) {
+    const t = state.trimStart + (i / fps);
+    video.currentTime = t;
+    await new Promise(r => { video.onseeked = r; });
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(video, 0, 0, w, h);
+
+    if (state.textContent) {
+      ctx.font = `${state.textWeight} ${fontSize}px ${state.textFont.split(',')[0]}`;
+      ctx.fillStyle = state.textColor;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0,0,0,0.7)';
+      ctx.shadowBlur = 4;
+      ctx.shadowOffsetX = 2;
+      ctx.shadowOffsetY = 2;
+      ctx.fillText(state.textContent, state.textX * w, state.textY * h);
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+    }
+
+    gif.addFrame(ctx, { copy: true, delay: Math.round(1000 / fps) });
+
+    const pct = Math.round((i + 1) / totalFrames * 100);
+    const fill = $('#progFill');
+    const txt = $('#progText');
+    if (fill) fill.style.width = pct + '%';
+    if (txt) txt.textContent = `提取帧 ${i + 1}/${totalFrames} (${pct}%)`;
+  }
+
+  statusDiv.innerHTML = `<div class="spinner"></div><div style="color:#ccc;margin-top:8px">正在编码GIF...</div>`;
+
+  gif.on('finished', blob => {
+    state.gifBlob = blob;
+    const url = URL.createObjectURL(blob);
+
+    // Download trigger
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'emoji_' + Date.now() + '.gif';
+    a.click();
+
+    // Replace preview area with looping GIF
+    const previewArea = $('#previewArea');
+    previewArea.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:contain" alt="GIF预览">`;
+
+    statusDiv.innerHTML = `
+      <div style="color:#4caf50;font-weight:600;margin-bottom:4px">GIF 已生成！</div>
+      <div style="font-size:12px;color:#888">文件大小: ${(blob.size / 1024).toFixed(1)} KB · 已自动下载</div>
+    `;
+    $('#btnDone').style.display = '';
+    $('#btnDone').textContent = '重新开始';
+    $('#btnDone').onclick = () => { location.reload(); };
+
+    video.remove();
+  });
+
+  gif.on('progress', p => {
+    const txt = $('#progText');
+    if (txt) txt.textContent = '编码中... ' + Math.round(p * 100) + '%';
+  });
+
+  gif.render();
+}
+
+async function exportImage() {
+  const statusDiv = $('#exportStatus');
+  statusDiv.innerHTML = `<div class="spinner"></div><div style="color:#ccc;margin-top:8px">正在合成图片...</div>`;
+
+  const targetW = 480;
+  const img = new Image();
+  img.src = state.photoUrl;
+  await new Promise(r => { img.onload = r; });
+
+  const aspect = img.naturalHeight / img.naturalWidth;
+  const w = targetW;
+  const h = Math.round(w * aspect);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+
+  if (state.textContent) {
+    const fontSize = Math.round(h / 8);
+    ctx.font = `${state.textWeight} ${fontSize}px ${state.textFont.split(',')[0]}`;
+    ctx.fillStyle = state.textColor;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,0.7)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 2;
+    ctx.fillText(state.textContent, state.textX * w, state.textY * h);
+  }
+
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'emoji_' + Date.now() + '.png';
+    a.click();
+
+    const previewArea = $('#previewArea');
+    previewArea.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:contain" alt="预览">`;
+
+    statusDiv.innerHTML = `
+      <div style="color:#4caf50;font-weight:600;margin-bottom:4px">图片已生成！</div>
+      <div style="font-size:12px;color:#888">文件大小: ${(blob.size / 1024).toFixed(1)} KB · 已自动下载</div>
+    `;
+    $('#btnDone').style.display = '';
+    $('#btnDone').textContent = '重新开始';
+    $('#btnDone').onclick = () => { location.reload(); };
+  }, 'image/png');
+}
+
+// ==== Render ====
+function render() {
+  updateSteps();
+  if (videoEl) { videoEl.pause(); videoEl = null; }
+  const isPhoto = state.mediaType === 'photo';
+  switch (state.step) {
+    case 0: renderStep0(); break;
+    case 1: if (isPhoto) renderStep2(); else renderStep1(); break;
+    case 2: if (isPhoto) renderStep3(); else renderStep2(); break;
+    case 3: if (!isPhoto) renderStep3(); break;
+  }
+}
+
+// ==== Init ====
+$('#fileInput').onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  state.mediaType = 'video';
+  state.videoFile = file;
+  if (state.photoUrl) { URL.revokeObjectURL(state.photoUrl); state.photoUrl = null; state.photoFile = null; }
+  if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
+  state.videoUrl = URL.createObjectURL(file);
+  state.trimStart = 0;
+  state.trimEnd = 0;
+
+  const video = document.createElement('video');
+  video.src = state.videoUrl;
+  video.preload = 'metadata';
+  await new Promise(r => { video.onloadedmetadata = r; });
+  state.videoDuration = video.duration;
+  video.remove();
+
+  renderStep0();
+};
+
+$('#photoInput').onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  state.mediaType = 'photo';
+  state.photoFile = file;
+  if (state.videoUrl) { URL.revokeObjectURL(state.videoUrl); state.videoUrl = null; state.videoFile = null; state.videoDuration = 0; }
+  if (state.photoUrl) URL.revokeObjectURL(state.photoUrl);
+  state.photoUrl = URL.createObjectURL(file);
+  state.trimStart = 0;
+  state.trimEnd = 0;
+
+  renderStep0();
+};
+
+render();
+</script>
+</body>
+</html>
