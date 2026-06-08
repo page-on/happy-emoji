@@ -108,16 +108,22 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 </div>
 <input type="file" id="fileInput" accept="video/*">
 <input type="file" id="photoInput" accept="image/*" style="display:none">
+<input type="file" id="burstInput" accept="image/*" multiple style="display:none">
 
 <script>
 const state = {
   step: 0,
-  mediaType: 'video', // 'video' | 'photo'
+  mediaType: 'video', // 'video' | 'photo' | 'burst'
   videoFile: null,
   videoUrl: null,
   videoDuration: 0,
   photoFile: null,
   photoUrl: null,
+  photos: [],
+  photoUrls: [],
+  photoTexts: [],
+  currentPhotoIdx: 0,
+  frameDelay: 500,
   trimStart: 0,
   trimEnd: 0,
   textContent: '',
@@ -172,8 +178,11 @@ const $$ = (s) => document.querySelectorAll(s);
 
 function updateSteps() {
   const isPhoto = state.mediaType === 'photo';
+  const isBurst = state.mediaType === 'burst';
   const steps = isPhoto
     ? ['选取素材', '添加文字', '预览导出']
+    : isBurst
+    ? ['选取素材', '排序编辑', '添加文字', '预览导出']
     : ['选取素材', '裁剪时间', '添加文字', '预览导出'];
 
   let html = steps.map((label, i) => {
@@ -202,18 +211,19 @@ function formatTime(sec) {
 
 // ==== STEP 0: Media Selection ====
 function renderStep0() {
-  const hasMedia = state.mediaType === 'video' ? !!state.videoFile : !!state.photoFile;
-  const selectedLabel = hasMedia
-    ? (state.mediaType === 'video'
-      ? `已选择视频: ${state.videoFile.name} (${formatTime(state.videoDuration)})`
-      : `已选择照片: ${state.photoFile.name}`)
-    : '';
+  const isBurst = state.mediaType === 'burst';
+  const hasMedia = isBurst ? state.photos.length > 0 : (state.mediaType === 'video' ? !!state.videoFile : !!state.photoFile);
+
+  let icon, hint;
+  if (isBurst) { icon = '📸'; hint = `连拍模式 · 已选${state.photos.length}张`; }
+  else if (state.mediaType === 'photo') { icon = '🖼'; hint = hasMedia ? state.photoFile.name : '点击下方按钮选择素材'; }
+  else { icon = '🎬'; hint = hasMedia ? `${state.videoFile.name} (${formatTime(state.videoDuration)})` : '点击下方按钮选择素材'; }
 
   $('#content').innerHTML = `
     <div class="preview-area" id="previewArea">
       <div class="empty-video">
-        <div class="icon">${state.mediaType === 'photo' ? '🖼' : '🎬'}</div>
-        <div>${hasMedia ? '已选取素材' : '点击下方按钮选择素材'}</div>
+        <div class="icon">${icon}</div>
+        <div>${hint}</div>
       </div>
     </div>
     <div class="controls">
@@ -228,19 +238,25 @@ function renderStep0() {
           <div style="font-size:14px;margin-bottom:2px">选取照片</div>
           <div class="hint">JPG / PNG</div>
         </div>
+        <div class="upload-zone" id="uploadBurst" style="flex:1">
+          <div class="icon">📸</div>
+          <div style="font-size:14px;margin-bottom:2px">连拍GIF</div>
+          <div class="hint">多选照片</div>
+        </div>
       </div>
       ${hasMedia ? `
       <div class="control-group" style="margin-top:6px">
         <label>已选择</label>
-        <div style="font-size:13px;color:#ccc">${selectedLabel}</div>
+        <div style="font-size:13px;color:#ccc">${hint}</div>
       </div>
       ` : ''}
     </div>`;
   $('#actions').innerHTML = `
-    <button class="btn btn-primary" id="btnNext" ${hasMedia ? '' : 'disabled'}>下一步${state.mediaType === 'photo' ? '：添加文字' : '：裁剪时间'}</button>`;
+    <button class="btn btn-primary" id="btnNext" ${hasMedia ? '' : 'disabled'}>下一步${isBurst ? '：排序编辑' : (state.mediaType === 'photo' ? '：添加文字' : '：裁剪时间')}</button>`;
 
   $('#uploadVideo').onclick = () => selectVideo();
   $('#uploadPhoto').onclick = () => selectPhoto();
+  $('#uploadBurst').onclick = () => selectBurst();
   const btnNext = $('#btnNext');
   if (!hasMedia) btnNext.onclick = () => showToast('请先选择素材', true);
   else btnNext.onclick = () => { state.step = 1; render(); };
@@ -249,13 +265,120 @@ function renderStep0() {
 function selectVideo() {
   state.mediaType = 'video';
   if (state.photoUrl) { URL.revokeObjectURL(state.photoUrl); state.photoUrl = null; state.photoFile = null; }
+  clearBurstPhotos();
   $('#fileInput').click();
 }
 
 function selectPhoto() {
   state.mediaType = 'photo';
   if (state.videoUrl) { URL.revokeObjectURL(state.videoUrl); state.videoUrl = null; state.videoFile = null; state.videoDuration = 0; }
+  clearBurstPhotos();
   $('#photoInput').click();
+}
+
+function selectBurst() {
+  state.mediaType = 'burst';
+  if (state.videoUrl) { URL.revokeObjectURL(state.videoUrl); state.videoUrl = null; state.videoFile = null; state.videoDuration = 0; }
+  if (state.photoUrl) { URL.revokeObjectURL(state.photoUrl); state.photoUrl = null; state.photoFile = null; }
+  clearBurstPhotos();
+  $('#burstInput').click();
+}
+
+function clearBurstPhotos() {
+  state.photoUrls.forEach(u => URL.revokeObjectURL(u));
+  state.photos = [];
+  state.photoUrls = [];
+}
+
+// ==== STEP 1 Burst: Frame Ordering ====
+function renderBurstStep1() {
+  const dur = state.photos.length * state.frameDelay / 1000;
+  const q = QUALITY_MAP[state.qualityLevel];
+  const estKB = Math.round(state.photos.length * q.width * 0.018);
+
+  const thumbHTML = state.photos.map((p, i) => `
+    <div class="thumb-card" draggable="true" data-idx="${i}" style="position:relative;width:72px;height:72px;border-radius:6px;overflow:hidden;border:2px solid transparent;cursor:grab;flex-shrink:0">
+      <img src="${state.photoUrls[i]}" style="width:100%;height:100%;object-fit:cover">
+      <span class="thumb-del" data-idx="${i}" style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:12px;line-height:18px;text-align:center;cursor:pointer">×</span>
+    </div>
+  `).join('');
+
+  $('#content').innerHTML = `
+    <div class="controls" style="gap:10px">
+      <div class="control-group">
+        <label>帧排序（${state.photos.length}/20 张）— 可拖拽排序，点击 × 删除</label>
+        <div id="thumbGrid" style="display:flex;gap:6px;flex-wrap:wrap;min-height:80px">${thumbHTML}</div>
+        ${state.photos.length < 20 ? `<button class="btn btn-outline" id="btnAddMore" style="margin-top:8px;width:100%">+ 添加更多照片</button>` : ''}
+      </div>
+      <div class="control-group">
+        <label>帧间隔</label>
+        <input type="range" id="delaySlider" min="500" max="1500" value="${state.frameDelay}" style="width:100%">
+        <div class="range-labels"><span>500ms (2fps)</span><span>${state.frameDelay}ms</span><span>1500ms (0.7fps)</span></div>
+      </div>
+      <div id="burstEstimate" style="font-size:11px;color:#aaa;text-align:center;margin-top:4px">
+        预计 ${state.photos.length} 帧 / ${dur.toFixed(1)}s / 约 ${estKB}KB
+      </div>
+    </div>`;
+  $('#actions').innerHTML = `
+    <button class="btn btn-outline" id="btnBack">上一步</button>
+    <button class="btn btn-primary" id="btnNext" ${state.photos.length > 0 ? '' : 'disabled'}>下一步：添加文字</button>`;
+
+  // Drag & drop
+  let dragIdx = -1;
+  $$('.thumb-card').forEach(card => {
+    card.ondragstart = (e) => { dragIdx = parseInt(card.dataset.idx); e.dataTransfer.effectAllowed = 'move'; };
+    card.ondragover = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
+    card.ondrop = (e) => {
+      e.preventDefault();
+      const toIdx = parseInt(card.dataset.idx);
+      if (dragIdx !== toIdx) {
+        const [moved] = state.photos.splice(dragIdx, 1);
+        state.photos.splice(toIdx, 0, moved);
+        const [movedU] = state.photoUrls.splice(dragIdx, 1);
+        state.photoUrls.splice(toIdx, 0, movedU);
+        renderBurstStep1();
+      }
+    };
+  });
+
+  // Delete buttons
+  $$('.thumb-del').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.dataset.idx);
+      URL.revokeObjectURL(state.photoUrls[idx]);
+      state.photos.splice(idx, 1);
+      state.photoUrls.splice(idx, 1);
+      renderBurstStep1();
+    };
+  });
+
+  // Add more
+  const addBtn = $('#btnAddMore');
+  if (addBtn) addBtn.onclick = () => $('#burstInput').click();
+
+  // Delay slider
+  const delaySlider = $('#delaySlider');
+  if (delaySlider) {
+    delaySlider.oninput = () => {
+      state.frameDelay = parseInt(delaySlider.value);
+      const labels = delaySlider.nextElementSibling;
+      if (labels && labels.children[1]) labels.children[1].textContent = state.frameDelay + 'ms';
+      const est = $('#burstEstimate');
+      if (est) {
+        const d = state.photos.length * state.frameDelay / 1000;
+        const q2 = QUALITY_MAP[state.qualityLevel];
+        const kb = Math.round(state.photos.length * q2.width * 0.018);
+        est.innerHTML = `预计 ${state.photos.length} 帧 / ${d.toFixed(1)}s / 约 ${kb}KB`;
+      }
+    };
+  }
+
+  $('#btnBack').onclick = () => { state.step = 0; render(); };
+  $('#btnNext').onclick = () => {
+    if (state.photos.length === 0) return showToast('请至少选择 1 张照片', true);
+    state.step = 2; render();
+  };
 }
 
 // ==== STEP 1: Video Trimming ====
@@ -542,9 +665,178 @@ async function generateThumbnails() {
 // ==== STEP 2: Text Overlay ====
 function renderStep2() {
   const isPhoto = state.mediaType === 'photo';
-  const mediaEl = isPhoto
-    ? `<img src="${state.photoUrl}" style="width:100%;height:100%;object-fit:contain" id="mediaPlayer">`
-    : `<video id="mediaPlayer" src="${state.videoUrl}" preload="auto" muted playsinline style="width:100%;height:100%;object-fit:contain"></video>`;
+  const isBurst = state.mediaType === 'burst';
+
+  function getPhotoText(idx) {
+    if (state.photoTexts[idx]) return state.photoTexts[idx];
+    for (let i = idx - 1; i >= 0; i--) {
+      if (state.photoTexts[i]) return state.photoTexts[i];
+    }
+    return null;
+  }
+
+  if (isBurst) {
+    if (state.currentPhotoIdx >= state.photos.length) state.currentPhotoIdx = 0;
+    const curIdx = state.currentPhotoIdx;
+    const pt = getPhotoText(curIdx);
+    const curContent = pt ? pt.content : '';
+    const curFont = pt ? pt.font : state.textFont;
+    const curWeight = pt ? pt.weight : state.textWeight;
+    const curColor = pt ? pt.color : state.textColor;
+    const curX = pt ? pt.x : state.textX;
+    const curY = pt ? pt.y : state.textY;
+    const curSize = pt ? pt.size : state.textSize;
+
+    $('#content').innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:center;gap:12px;padding:6px 0">
+        <button class="font-btn" id="prevPhoto" ${curIdx === 0 ? 'disabled style="opacity:0.3"' : ''}>←</button>
+        <span style="font-size:13px;color:#ccc">第 ${curIdx + 1}/${state.photos.length} 张</span>
+        <button class="font-btn" id="nextPhoto" ${curIdx >= state.photos.length - 1 ? 'disabled style="opacity:0.3"' : ''}>→</button>
+      </div>
+      <div class="preview-area" id="previewArea" style="position:relative;overflow:hidden">
+        <img src="${state.photoUrls[curIdx]}" style="width:100%;height:100%;object-fit:contain" id="mediaPlayer">
+        <div class="text-overlay" id="textOverlay" style='
+          font-family:${curFont};color:${curColor};font-weight:${curWeight};
+          font-size:${curSize}px;left:${curX * 100}%;top:${curY * 100}%;transform:translate(-50%,-50%);
+        '>${curContent || '输入文字'}</div>
+      </div>
+      <div class="controls">
+        <div class="control-group">
+          <label>文字内容（最多6字）</label>
+          <input type="text" id="textInput" value="${curContent}" placeholder="输入表情包配文..." maxlength="6">
+          <div style="font-size:11px;color:#888;margin-top:4px;text-align:right" id="charCount">${curContent.length}/6</div>
+        </div>
+        <div class="control-group">
+          <label>字体</label>
+          <div class="font-options">${fonts.map((f,i) => `
+            <button class="font-btn${curFont===f.value?' selected':''}" data-font="${f.value}" data-weight="${f.weight}">${f.label}</button>
+          `).join('')}</div>
+        </div>
+        <div class="control-group">
+          <label>颜色</label>
+          <div class="color-options">${colors.map(c => `
+            <div class="color-dot${curColor===c?' selected':''}" data-color="${c}" style="background:${c}"></div>
+          `).join('')}</div>
+        </div>
+        <div class="control-group">
+          <label>字号</label>
+          <input type="range" id="sizeSlider" min="16" max="80" value="${curSize}">
+          <div class="range-labels"><span>16px</span><span>${curSize}px</span><span>80px</span></div>
+        </div>
+        <div style="text-align:center;font-size:12px;color:#666">💡 拖拽文字调整位置 · 双击居中</div>
+      </div>`;
+    $('#actions').innerHTML = `
+      <button class="btn btn-outline" id="btnBack">上一步</button>
+      <button class="btn btn-primary" id="btnNext">下一步：预览导出</button>`;
+
+    const overlay = $('#textOverlay');
+
+    function saveCurrentPhotoText() {
+      state.photoTexts[curIdx] = {
+        content: state.textContent,
+        font: state.textFont,
+        weight: state.textWeight,
+        color: state.textColor,
+        x: state.textX,
+        y: state.textY,
+        size: state.textSize
+      };
+    }
+
+    // Init state from current photo
+    if (pt) {
+      state.textContent = pt.content || '';
+      state.textFont = pt.font;
+      state.textWeight = pt.weight;
+      state.textColor = pt.color;
+      state.textX = pt.x;
+      state.textY = pt.y;
+      state.textSize = pt.size;
+    }
+
+    const textInput = $('#textInput');
+    textInput.oninput = () => {
+      state.textContent = textInput.value;
+      overlay.textContent = state.textContent || '输入文字';
+      overlay.style.display = '';
+      $('#charCount').textContent = state.textContent.length + '/6';
+      saveCurrentPhotoText();
+    };
+
+    $$('.font-btn').forEach(btn => {
+      btn.onclick = () => {
+        state.textFont = btn.dataset.font;
+        state.textWeight = btn.dataset.weight || '700';
+        overlay.style.fontFamily = state.textFont;
+        overlay.style.fontWeight = state.textWeight;
+        $$('.font-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        saveCurrentPhotoText();
+      };
+    });
+
+    $$('.color-dot').forEach(dot => {
+      dot.onclick = () => {
+        state.textColor = dot.dataset.color;
+        overlay.style.color = state.textColor;
+        $$('.color-dot').forEach(d => d.classList.remove('selected'));
+        dot.classList.add('selected');
+        saveCurrentPhotoText();
+      };
+    });
+
+    $('#sizeSlider').oninput = () => {
+      state.textSize = parseInt($('#sizeSlider').value);
+      overlay.style.fontSize = state.textSize + 'px';
+      const labels = $('#sizeSlider').nextElementSibling;
+      if (labels && labels.children[1]) labels.children[1].textContent = state.textSize + 'px';
+      saveCurrentPhotoText();
+    };
+
+    overlay.onpointerdown = (e) => {
+      isDragging = true;
+      overlay.setPointerCapture(e.pointerId);
+      dragStart = { x: e.clientX, y: e.clientY };
+      textStartPos = { x: state.textX * 100, y: state.textY * 100 };
+      e.preventDefault();
+    };
+    overlay.onpointermove = (e) => {
+      if (!isDragging) return;
+      const rect = $('#previewArea').getBoundingClientRect();
+      const dx = (e.clientX - dragStart.x) / rect.width * 100;
+      const dy = (e.clientY - dragStart.y) / rect.height * 100;
+      let nx = textStartPos.x + dx, ny = textStartPos.y + dy;
+      nx = Math.max(5, Math.min(95, nx));
+      ny = Math.max(5, Math.min(95, ny));
+      state.textX = nx / 100; state.textY = ny / 100;
+      overlay.style.left = nx + '%'; overlay.style.top = ny + '%';
+      saveCurrentPhotoText();
+    };
+    overlay.onpointerup = () => { isDragging = false; };
+    overlay.ondblclick = () => {
+      state.textX = 0.5; state.textY = 0.5;
+      overlay.style.left = '50%'; overlay.style.top = '50%';
+      saveCurrentPhotoText();
+    };
+
+    $('#prevPhoto').onclick = () => {
+      if (state.currentPhotoIdx > 0) { state.currentPhotoIdx--; renderStep2(); }
+    };
+    $('#nextPhoto').onclick = () => {
+      if (state.currentPhotoIdx < state.photos.length - 1) { state.currentPhotoIdx++; renderStep2(); }
+    };
+
+    $('#btnBack').onclick = () => { state.step = (state.mediaType === 'photo') ? 0 : 1; render(); };
+    $('#btnNext').onclick = () => { saveCurrentPhotoText(); state.step = (state.mediaType === 'photo') ? 2 : 3; render(); };
+    return;
+  }
+
+  let mediaEl;
+  if (isPhoto) {
+    mediaEl = `<img src="${state.photoUrl}" style="width:100%;height:100%;object-fit:contain" id="mediaPlayer">`;
+  } else {
+    mediaEl = `<video id="mediaPlayer" src="${state.videoUrl}" preload="auto" muted playsinline style="width:100%;height:100%;object-fit:contain"></video>`;
+  }
 
   $('#content').innerHTML = `
     <div class="preview-area" id="previewArea" style="position:relative;overflow:hidden">
@@ -588,17 +880,17 @@ function renderStep2() {
     <button class="btn btn-outline" id="btnBack">上一步</button>
     <button class="btn btn-primary" id="btnNext">下一步：预览导出</button>`;
 
-  if (!isPhoto) {
+  if (!isPhoto && !isBurst) {
     videoEl = $('#mediaPlayer');
     videoEl.currentTime = state.trimStart;
   }
 
   const overlay = $('#textOverlay');
   const textInput = $('#textInput');
-
   textInput.oninput = () => {
     state.textContent = textInput.value;
     overlay.textContent = state.textContent || '输入文字';
+    overlay.style.display = '';
     $('#charCount').textContent = state.textContent.length + '/6';
   };
 
@@ -629,7 +921,6 @@ function renderStep2() {
     if (labels && labels.children[1]) labels.children[1].textContent = state.textSize + 'px';
   };
 
-  // Drag
   overlay.onpointerdown = (e) => {
     isDragging = true;
     overlay.setPointerCapture(e.pointerId);
@@ -657,33 +948,42 @@ function renderStep2() {
     overlay.style.top = '50%';
   };
 
-  $('#btnBack').onclick = () => { state.step = isPhoto ? 0 : 1; render(); };
-  $('#btnNext').onclick = () => { state.step = isPhoto ? 2 : 3; render(); };
+  $('#btnBack').onclick = () => { state.step = (state.mediaType === 'photo') ? 0 : 1; render(); };
+  $('#btnNext').onclick = () => { state.step = (state.mediaType === 'photo') ? 2 : 3; render(); };
 }
 
 // ==== STEP 3: Preview & Export ====
 function renderStep3() {
   const isPhoto = state.mediaType === 'photo';
-  const mediaEl = isPhoto
-    ? `<img src="${state.photoUrl}" style="width:100%;height:100%;object-fit:contain" id="mediaPlayer">`
-    : `<video id="mediaPlayer" src="${state.videoUrl}" preload="auto" muted playsinline></video>`;
+  const isBurst = state.mediaType === 'burst';
 
-  const infoSection = isPhoto
+  let mediaEl;
+  if (isBurst && state.photoUrls.length > 0) {
+    mediaEl = `<img src="${state.photoUrls[0]}" style="width:100%;height:100%;object-fit:contain" id="mediaPlayer">`;
+  } else if (isPhoto) {
+    mediaEl = `<img src="${state.photoUrl}" style="width:100%;height:100%;object-fit:contain" id="mediaPlayer">`;
+  } else {
+    mediaEl = `<video id="mediaPlayer" src="${state.videoUrl}" preload="auto" muted playsinline></video>`;
+  }
+
+  const infoSection = isBurst
+    ? `<div style="font-size:13px;color:#ccc">连拍模式: ${state.photos.length} 张照片</div>`
+    : isPhoto
     ? `<div style="font-size:13px;color:#ccc">照片模式: 输出静态图片</div>`
     : `<div style="font-size:13px;color:#ccc">视频片段: ${formatTime(state.trimStart)} ~ ${formatTime(state.trimEnd)} (${(state.trimEnd - state.trimStart).toFixed(1)}s)</div>`;
 
   const exportBtnLabel = isPhoto ? '🖼 导出图片' : '🎞 导出 GIF';
 
   const q = QUALITY_MAP[state.qualityLevel];
-  const dur = state.trimEnd - state.trimStart;
-  const estFrames = Math.min(Math.ceil(dur * 8 / state.speed), state.maxFrames);
+  const dur = isBurst ? state.photos.length * state.frameDelay / 1000 : (state.trimEnd - state.trimStart);
+  const estFrames = isBurst ? state.photos.length : Math.min(Math.ceil(dur * 8 / state.speed), state.maxFrames);
   const estKB = Math.round(estFrames * q.width * 0.018);
   const exportHint = isPhoto
     ? `预计输出: PNG, ${q.width}px宽`
     : `预计: ${estFrames}帧, ${q.width}p, 约${estKB}KB`;
 
-  const rawFrames = Math.ceil(dur * 8 / state.speed);
-  const sampleInfo = (!isPhoto && rawFrames > state.maxFrames)
+  const rawFrames = isBurst ? 0 : Math.ceil(dur * 8 / state.speed);
+  const sampleInfo = (!isPhoto && !isBurst && rawFrames > state.maxFrames)
     ? `<div style="font-size:12px;color:${state.sampleMode === 'uniform' ? '#448aff' : '#ff6b6b'};margin-top:4px">采样: ${state.sampleMode === 'uniform' ? '均匀采样' : '截断'} (${rawFrames} → ${estFrames} 帧)</div>`
     : '';
 
@@ -707,9 +1007,10 @@ function renderStep3() {
         ${infoSection}
         ${sampleInfo}
         ${state.textContent ? `<div style="font-size:13px;color:#ccc;margin-top:4px">文字: "${state.textContent}"</div>` : ''}
-        ${!isPhoto ? `<div style="font-size:13px;color:#ccc;margin-top:4px">倍速: ${state.speed < 1 ? (state.speed === 0.25 ? '1/4' : '1/2') : state.speed}x</div>` : ''}
+        ${!isPhoto && !isBurst ? `<div style="font-size:13px;color:#ccc;margin-top:4px">倍速: ${state.speed < 1 ? (state.speed === 0.25 ? '1/4' : '1/2') : state.speed}x</div>` : ''}
+        ${isBurst ? `<div style="font-size:13px;color:#ccc;margin-top:4px">帧间隔: ${state.frameDelay}ms (${(1000/state.frameDelay).toFixed(1)}fps)</div>` : ''}
       </div>
-      ${!isPhoto ? `
+      ${!isPhoto && !isBurst ? `
       <div class="control-group">
         <label>画质</label>
         <div class="font-options" id="qualityOptions">
@@ -728,7 +1029,7 @@ function renderStep3() {
     <button class="btn btn-outline" id="btnBack">上一步</button>
     <button class="btn btn-outline" id="btnDone" style="display:none">重新开始</button>`;
 
-  if (!isPhoto) {
+  if (!isPhoto && !isBurst) {
     videoEl = $('#mediaPlayer');
     videoEl.currentTime = state.trimStart;
     videoEl.playbackRate = state.speed;
@@ -736,6 +1037,35 @@ function renderStep3() {
     videoEl.ontimeupdate = () => {
       if (videoEl.currentTime >= state.trimEnd) { videoEl.pause(); videoEl.currentTime = state.trimStart; videoEl.play(); }
     };
+  }
+
+  if (isBurst && state.photoUrls.length > 1) {
+    let burstIdx = 0;
+    const player = $('#mediaPlayer');
+    const overlay = $('#textOverlay');
+    function getBurstText(idx) {
+      if (state.photoTexts && state.photoTexts[idx]) return state.photoTexts[idx];
+      for (let i = idx - 1; i >= 0; i--) {
+        if (state.photoTexts && state.photoTexts[i]) return state.photoTexts[i];
+      }
+      return null;
+    }
+    const burstInterval = setInterval(() => {
+      burstIdx = (burstIdx + 1) % state.photoUrls.length;
+      if (player) player.src = state.photoUrls[burstIdx];
+      const pt = getBurstText(burstIdx);
+      if (overlay) {
+        overlay.textContent = (pt && pt.content) ? pt.content : '';
+        overlay.style.display = (pt && pt.content) ? '' : 'none';
+      }
+    }, state.frameDelay);
+    state._burstTimer = burstInterval;
+    // Set initial overlay for first photo
+    if (overlay && state.photoTexts.length > 0) {
+      const pt0 = getBurstText(0);
+      overlay.textContent = (pt0 && pt0.content) ? pt0.content : '';
+      overlay.style.display = (pt0 && pt0.content) ? '' : 'none';
+    }
   }
 
   const overlay = $('#textOverlay');
@@ -748,14 +1078,118 @@ function renderStep3() {
     };
   });
 
-  $('#btnBack').onclick = () => { state.step = isPhoto ? 1 : 2; render(); };
+  $('#btnBack').onclick = () => { state.step = (state.mediaType === 'photo') ? 1 : 2; render(); };
 
   $('#btnExport').onclick = isPhoto ? exportImage : exportGif;
+}
+
+async function exportBurstGif(statusDiv) {
+  try {
+  const q = QUALITY_MAP[state.qualityLevel];
+  const targetW = q.width;
+  const w = targetW;
+
+  function getPhotoText(idx) {
+    if (state.photoTexts && state.photoTexts[idx]) return state.photoTexts[idx];
+    for (let i = idx - 1; i >= 0; i--) {
+      if (state.photoTexts && state.photoTexts[i]) return state.photoTexts[i];
+    }
+    return null;
+  }
+
+  const firstImg = new Image();
+  firstImg.src = state.photoUrls[0];
+  await new Promise((resolve, reject) => { firstImg.onload = resolve; firstImg.onerror = () => reject(new Error('照片加载失败')); });
+  const aspect = firstImg.naturalHeight / firstImg.naturalWidth;
+  const h = Math.round(w * aspect);
+
+  const gif = new GIF({
+    workers: 2,
+    quality: q.gifQuality,
+    width: w,
+    height: h,
+    repeat: 0,
+    workerScript: GIF_WORKER_URL
+  });
+
+  const frameCanvas = document.createElement('canvas');
+  frameCanvas.width = w;
+  frameCanvas.height = h;
+  const ctx = frameCanvas.getContext('2d');
+  const gifDelay = Math.round(state.frameDelay / 10);
+
+  for (let i = 0; i < state.photos.length; i++) {
+    statusDiv.innerHTML = `<div class="spinner"></div><div style="color:#ccc;margin-top:8px">正在合成第 ${i + 1}/${state.photos.length} 帧...</div><div class="progress-bar" style="margin-top:12px"><div class="progress-fill" style="width:${Math.round((i + 1) / state.photos.length * 100)}%"></div></div>`;
+
+    const img = new Image();
+    img.src = state.photoUrls[i];
+    await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = () => reject(new Error(`第 ${i + 1} 张照片加载失败`)); });
+
+    ctx.clearRect(0, 0, w, h);
+    const scale = Math.min(w / img.naturalWidth, h / img.naturalHeight);
+    const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
+    ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+
+    const pt = getPhotoText(i);
+    if (pt && pt.content) {
+      const fs = Math.round(pt.size * (w / 420));
+      ctx.font = `${pt.weight} ${fs}px ${pt.font.split(',')[0]}`;
+      ctx.fillStyle = pt.color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0,0,0,0.7)';
+      ctx.shadowBlur = 4;
+      ctx.shadowOffsetX = 2;
+      ctx.shadowOffsetY = 2;
+      ctx.fillText(pt.content, pt.x * w, pt.y * h);
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+    }
+
+    gif.addFrame(frameCanvas, { copy: true, delay: gifDelay });
+  }
+
+  statusDiv.innerHTML = `<div class="spinner"></div><div style="color:#ccc;margin-top:8px">正在编码GIF...</div>`;
+
+  await new Promise((resolve, reject) => {
+    const encTimeout = setTimeout(() => reject(new Error('GIF编码超时（超过30秒）')), 30000);
+    gif.on('finished', blob => {
+      clearTimeout(encTimeout);
+      state.gifBlob = blob;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'emoji_' + Date.now() + '.gif';
+      a.click();
+      const previewArea = $('#previewArea');
+      previewArea.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:contain" alt="GIF预览">`;
+      statusDiv.innerHTML = `<div style="color:#4caf50;font-weight:600;margin-bottom:4px">GIF 已生成！</div><div style="font-size:12px;color:#888">文件大小: ${(blob.size / 1024).toFixed(1)} KB · 已自动下载</div>`;
+      $('#btnDone').style.display = '';
+      $('#btnDone').textContent = '重新开始';
+      $('#btnDone').onclick = () => { location.reload(); };
+      resolve();
+    });
+    gif.on('progress', p => {
+      const txt = statusDiv.querySelector('[id]');
+    });
+    gif.render();
+  });
+
+  } catch(e) {
+    statusDiv.innerHTML = `<div style="color:#f44336;font-weight:600;margin-bottom:4px">生成失败</div><div style="font-size:12px;color:#888">${e.message} · 请重试</div>`;
+    $('#btnDone').style.display = '';
+    $('#btnDone').textContent = '重新开始';
+    $('#btnDone').onclick = () => { location.reload(); };
+  }
 }
 
 async function exportGif() {
   const statusDiv = $('#exportStatus');
   statusDiv.innerHTML = `<div class="spinner"></div><div style="color:#ccc;margin-top:8px">正在生成GIF...</div><div class="progress-bar" style="margin-top:12px"><div class="progress-fill" id="progFill" style="width:0%"></div></div><div style="font-size:12px;color:#888;margin-top:4px" id="progText">准备中...</div>`;
+
+  if (state.mediaType === 'burst') return exportBurstGif(statusDiv);
 
   let video, gif;
   try {
@@ -961,12 +1395,13 @@ async function exportImage() {
 function render() {
   updateSteps();
   if (videoEl) { videoEl.pause(); videoEl = null; }
-  const isPhoto = state.mediaType === 'photo';
+  if (state._burstTimer) { clearInterval(state._burstTimer); state._burstTimer = null; }
+  const isBurst = state.mediaType === 'burst';
   switch (state.step) {
     case 0: renderStep0(); break;
-    case 1: if (isPhoto) renderStep2(); else renderStep1(); break;
-    case 2: if (isPhoto) renderStep3(); else renderStep2(); break;
-    case 3: if (!isPhoto) renderStep3(); break;
+    case 1: if (isBurst) renderBurstStep1(); else if (state.mediaType === 'photo') renderStep2(); else renderStep1(); break;
+    case 2: if (isBurst) renderStep2(); else if (state.mediaType === 'photo') renderStep3(); else renderStep2(); break;
+    case 3: if (state.mediaType !== 'photo') renderStep3(); break;
   }
 }
 
@@ -1015,6 +1450,22 @@ $('#photoInput').onchange = (e) => {
   state.trimEnd = 0;
 
   renderStep0();
+};
+
+$('#burstInput').onchange = (e) => {
+  const files = Array.from(e.target.files);
+  if (files.length === 0) return;
+  state.mediaType = 'burst';
+  clearBurstPhotos();
+  const addCount = Math.min(files.length, 20 - state.photos.length);
+  if (addCount < files.length) showToast('最多选择 20 张照片，已自动截取前 20 张', true);
+  for (let i = 0; i < addCount; i++) {
+    state.photos.push(files[i]);
+    state.photoUrls.push(URL.createObjectURL(files[i]));
+  }
+  state.trimStart = 0; state.trimEnd = 0;
+  if (state.step === 0) renderStep0();
+  else if (state.step === 1) renderBurstStep1();
 };
 
 render();
