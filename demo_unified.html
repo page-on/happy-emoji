@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>表情包制作器 - Demo (统一版)</title>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=ZCOOL+KuaiLe&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+<script type="text/plain" id="gifWorkerSrc">
+(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){var NeuQuant=require("./TypedNeuQuant.js");var LZWEncoder=require("./LZWEncoder.js");function ByteArray(){this.page=-1;this.pages=[];this.newPage()}ByteArray.pageSize=4096;ByteArray.charMap={};for(var i=0;i<256;i++)ByteArray.charMap[i]=String.fromCharCode(i);ByteArray.prototype.newPage=function(){this.pages[++this.page]=new Uint8Array(ByteArray.pageSize);this.cursor=0};ByteArray.prototype.getData=function(){var rv="";for(var p=0;p<this.pages.length;p++){for(var i=0;i<ByteArray.pageSize;i++){rv+=ByteArray.charMap[this.pages[p][i]]}}return rv};ByteArray.prototype.writeByte=function(val){if(this.cursor>=ByteArray.pageSize)this.newPage();this.pages[this.page][this.cursor++]=val};ByteArray.prototype.writeUTFBytes=function(string){for(var l=string.length,i=0;i<l;i++)this.writeByte(string.charCodeAt(i))};ByteArray.prototype.writeBytes=function(array,offset,length){for(var l=length||array.length,i=offset||0;i<l;i++)this.writeByte(array[i])};function GIFEncoder(width,height){this.width=~~width;this.height=~~height;this.transparent=null;this.transIndex=0;this.repeat=-1;this.delay=0;this.image=null;this.pixels=null;this.indexedPixels=null;this.colorDepth=null;this.colorTab=null;this.neuQuant=null;this.usedEntry=new Array;this.palSize=7;this.dispose=-1;this.firstFrame=true;this.sample=10;this.dither=false;this.globalPalette=false;this.out=new ByteArray}GIFEncoder.prototype.setDelay=function(milliseconds){this.delay=Math.round(milliseconds/10)};GIFEncoder.prototype.setFrameRate=function(fps){this.delay=Math.round(100/fps)};GIFEncoder.prototype.setDispose=function(disposalCode){if(disposalCode>=0)this.dispose=disposalCode};GIFEncoder.prototype.setRepeat=function(repeat){this.repeat=repeat};GIFEncoder.prototype.setTransparent=function(color){this.transparent=color};GIFEncoder.prototype.addFrame=function(imageData){this.image=imageData;this.colorTab=this.globalPalette&&this.globalPalette.slice?this.globalPalette:null;this.getImagePixels();this.analyzePixels();if(this.globalPalette===true)this.globalPalette=this.colorTab;if(this.firstFrame){this.writeLSD();this.writePalette();if(this.repeat>=0){this.writeNetscapeExt()}}this.writeGraphicCtrlExt();this.writeImageDesc();if(!this.firstFrame&&!this.globalPalette)this.writePalette();this.writePixels();this.firstFrame=false};GIFEncoder.prototype.finish=function(){this.out.writeByte(59)};GIFEncoder.prototype.setQuality=function(quality){if(quality<1)quality=1;this.sample=quality};GIFEncoder.prototype.setDither=function(dither){if(dither===true)dither="FloydSteinberg";this.dither=dither};GIFEncoder.prototype.setGlobalPalette=function(palette){this.globalPalette=palette};GIFEncoder.prototype.getGlobalPalette=function(){return this.globalPalette&&this.globalPalette.slice&&this.globalPalette.slice(0)||this.globalPalette};GIFEncoder.prototype.writeHeader=function(){this.out.writeUTFBytes("GIF89a")};GIFEncoder.prototype.analyzePixels=function(){if(!this.colorTab){this.neuQuant=new NeuQuant(this.pixels,this.sample);this.neuQuant.buildColormap();this.colorTab=this.neuQuant.getColormap()}if(this.dither){this.ditherPixels(this.dither.replace("-serpentine",""),this.dither.match(/-serpentine/)!==null)}else{this.indexPixels()}this.pixels=null;this.colorDepth=8;this.palSize=7;if(this.transparent!==null){this.transIndex=this.findClosest(this.transparent,true)}};GIFEncoder.prototype.indexPixels=function(imgq){var nPix=this.pixels.length/3;this.indexedPixels=new Uint8Array(nPix);var k=0;for(var j=0;j<nPix;j++){var index=this.findClosestRGB(this.pixels[k++]&255,this.pixels[k++]&255,this.pixels[k++]&255);this.usedEntry[index]=true;this.indexedPixels[j]=index}};GIFEncoder.prototype.ditherPixels=function(kernel,serpentine){var kernels={FalseFloydSteinberg:[[3/8,1,0],[3/8,0,1],[2/8,1,1]],FloydSteinberg:[[7/16,1,0],[3/16,-1,1],[5/16,0,1],[1/16,1,1]],Stucki:[[8/42,1,0],[4/42,2,0],[2/42,-2,1],[4/42,-1,1],[8/42,0,1],[4/42,1,1],[2/42,2,1],[1/42,-2,2],[2/42,-1,2],[4/42,0,2],[2/42,1,2],[1/42,2,2]],Atkinson:[[1/8,1,0],[1/8,2,0],[1/8,-1,1],[1/8,0,1],[1/8,1,1],[1/8,0,2]]};if(!kernel||!kernels[kernel]){throw"Unknown dithering kernel: "+kernel}var ds=kernels[kernel];var index=0,height=this.height,width=this.width,data=this.pixels;var direction=serpentine?-1:1;this.indexedPixels=new Uint8Array(this.pixels.length/3);for(var y=0;y<height;y++){if(serpentine)direction=direction*-1;for(var x=direction==1?0:width-1,xend=direction==1?width:0;x!==xend;x+=direction){index=y*width+x;var idx=index*3;var r1=data[idx];var g1=data[idx+1];var b1=data[idx+2];idx=this.findClosestRGB(r1,g1,b1);this.usedEntry[idx]=true;this.indexedPixels[index]=idx;idx*=3;var r2=this.colorTab[idx];var g2=this.colorTab[idx+1];var b2=this.colorTab[idx+2];var er=r1-r2;var eg=g1-g2;var eb=b1-b2;for(var i=direction==1?0:ds.length-1,end=direction==1?ds.length:0;i!==end;i+=direction){var x1=ds[i][1];var y1=ds[i][2];if(x1+x>=0&&x1+x<width&&y1+y>=0&&y1+y<height){var d=ds[i][0];idx=index+x1+y1*width;idx*=3;data[idx]=Math.max(0,Math.min(255,data[idx]+er*d));data[idx+1]=Math.max(0,Math.min(255,data[idx+1]+eg*d));data[idx+2]=Math.max(0,Math.min(255,data[idx+2]+eb*d))}}}}};GIFEncoder.prototype.findClosest=function(c,used){return this.findClosestRGB((c&16711680)>>16,(c&65280)>>8,c&255,used)};GIFEncoder.prototype.findClosestRGB=function(r,g,b,used){if(this.colorTab===null)return-1;if(this.neuQuant&&!used){return this.neuQuant.lookupRGB(r,g,b)}var c=b|g<<8|r<<16;var minpos=0;var dmin=256*256*256;var len=this.colorTab.length;for(var i=0,index=0;i<len;index++){var dr=r-(this.colorTab[i++]&255);var dg=g-(this.colorTab[i++]&255);var db=b-(this.colorTab[i++]&255);var d=dr*dr+dg*dg+db*db;if((!used||this.usedEntry[index])&&d<dmin){dmin=d;minpos=index}}return minpos};GIFEncoder.prototype.getImagePixels=function(){var w=this.width;var h=this.height;this.pixels=new Uint8Array(w*h*3);var data=this.image;var srcPos=0;var count=0;for(var i=0;i<h;i++){for(var j=0;j<w;j++){this.pixels[count++]=data[srcPos++];this.pixels[count++]=data[srcPos++];this.pixels[count++]=data[srcPos++];srcPos++}}};GIFEncoder.prototype.writeGraphicCtrlExt=function(){this.out.writeByte(33);this.out.writeByte(249);this.out.writeByte(4);var transp,disp;if(this.transparent===null){transp=0;disp=0}else{transp=1;disp=2}if(this.dispose>=0){disp=dispose&7}disp<<=2;this.out.writeByte(0|disp|0|transp);this.writeShort(this.delay);this.out.writeByte(this.transIndex);this.out.writeByte(0)};GIFEncoder.prototype.writeImageDesc=function(){this.out.writeByte(44);this.writeShort(0);this.writeShort(0);this.writeShort(this.width);this.writeShort(this.height);if(this.firstFrame||this.globalPalette){this.out.writeByte(0)}else{this.out.writeByte(128|0|0|0|this.palSize)}};GIFEncoder.prototype.writeLSD=function(){this.writeShort(this.width);this.writeShort(this.height);this.out.writeByte(128|112|0|this.palSize);this.out.writeByte(0);this.out.writeByte(0)};GIFEncoder.prototype.writeNetscapeExt=function(){this.out.writeByte(33);this.out.writeByte(255);this.out.writeByte(11);this.out.writeUTFBytes("NETSCAPE2.0");this.out.writeByte(3);this.out.writeByte(1);this.writeShort(this.repeat);this.out.writeByte(0)};GIFEncoder.prototype.writePalette=function(){this.out.writeBytes(this.colorTab);var n=3*256-this.colorTab.length;for(var i=0;i<n;i++)this.out.writeByte(0)};GIFEncoder.prototype.writeShort=function(pValue){this.out.writeByte(pValue&255);this.out.writeByte(pValue>>8&255)};GIFEncoder.prototype.writePixels=function(){var enc=new LZWEncoder(this.width,this.height,this.indexedPixels,this.colorDepth);enc.encode(this.out)};GIFEncoder.prototype.stream=function(){return this.out};module.exports=GIFEncoder},{"./LZWEncoder.js":2,"./TypedNeuQuant.js":3}],2:[function(require,module,exports){var EOF=-1;var BITS=12;var HSIZE=5003;var masks=[0,1,3,7,15,31,63,127,255,511,1023,2047,4095,8191,16383,32767,65535];function LZWEncoder(width,height,pixels,colorDepth){var initCodeSize=Math.max(2,colorDepth);var accum=new Uint8Array(256);var htab=new Int32Array(HSIZE);var codetab=new Int32Array(HSIZE);var cur_accum,cur_bits=0;var a_count;var free_ent=0;var maxcode;var clear_flg=false;var g_init_bits,ClearCode,EOFCode;function char_out(c,outs){accum[a_count++]=c;if(a_count>=254)flush_char(outs)}function cl_block(outs){cl_hash(HSIZE);free_ent=ClearCode+2;clear_flg=true;output(ClearCode,outs)}function cl_hash(hsize){for(var i=0;i<hsize;++i)htab[i]=-1}function compress(init_bits,outs){var fcode,c,i,ent,disp,hsize_reg,hshift;g_init_bits=init_bits;clear_flg=false;n_bits=g_init_bits;maxcode=MAXCODE(n_bits);ClearCode=1<<init_bits-1;EOFCode=ClearCode+1;free_ent=ClearCode+2;a_count=0;ent=nextPixel();hshift=0;for(fcode=HSIZE;fcode<65536;fcode*=2)++hshift;hshift=8-hshift;hsize_reg=HSIZE;cl_hash(hsize_reg);output(ClearCode,outs);outer_loop:while((c=nextPixel())!=EOF){fcode=(c<<BITS)+ent;i=c<<hshift^ent;if(htab[i]===fcode){ent=codetab[i];continue}else if(htab[i]>=0){disp=hsize_reg-i;if(i===0)disp=1;do{if((i-=disp)<0)i+=hsize_reg;if(htab[i]===fcode){ent=codetab[i];continue outer_loop}}while(htab[i]>=0)}output(ent,outs);ent=c;if(free_ent<1<<BITS){codetab[i]=free_ent++;htab[i]=fcode}else{cl_block(outs)}}output(ent,outs);output(EOFCode,outs)}function encode(outs){outs.writeByte(initCodeSize);remaining=width*height;curPixel=0;compress(initCodeSize+1,outs);outs.writeByte(0)}function flush_char(outs){if(a_count>0){outs.writeByte(a_count);outs.writeBytes(accum,0,a_count);a_count=0}}function MAXCODE(n_bits){return(1<<n_bits)-1}function nextPixel(){if(remaining===0)return EOF;--remaining;var pix=pixels[curPixel++];return pix&255}function output(code,outs){cur_accum&=masks[cur_bits];if(cur_bits>0)cur_accum|=code<<cur_bits;else cur_accum=code;cur_bits+=n_bits;while(cur_bits>=8){char_out(cur_accum&255,outs);cur_accum>>=8;cur_bits-=8}if(free_ent>maxcode||clear_flg){if(clear_flg){maxcode=MAXCODE(n_bits=g_init_bits);clear_flg=false}else{++n_bits;if(n_bits==BITS)maxcode=1<<BITS;else maxcode=MAXCODE(n_bits)}}if(code==EOFCode){while(cur_bits>0){char_out(cur_accum&255,outs);cur_accum>>=8;cur_bits-=8}flush_char(outs)}}this.encode=encode}module.exports=LZWEncoder},{}],3:[function(require,module,exports){var ncycles=100;var netsize=256;var maxnetpos=netsize-1;var netbiasshift=4;var intbiasshift=16;var intbias=1<<intbiasshift;var gammashift=10;var gamma=1<<gammashift;var betashift=10;var beta=intbias>>betashift;var betagamma=intbias<<gammashift-betashift;var initrad=netsize>>3;var radiusbiasshift=6;var radiusbias=1<<radiusbiasshift;var initradius=initrad*radiusbias;var radiusdec=30;var alphabiasshift=10;var initalpha=1<<alphabiasshift;var alphadec;var radbiasshift=8;var radbias=1<<radbiasshift;var alpharadbshift=alphabiasshift+radbiasshift;var alpharadbias=1<<alpharadbshift;var prime1=499;var prime2=491;var prime3=487;var prime4=503;var minpicturebytes=3*prime4;function NeuQuant(pixels,samplefac){var network;var netindex;var bias;var freq;var radpower;function init(){network=[];netindex=new Int32Array(256);bias=new Int32Array(netsize);freq=new Int32Array(netsize);radpower=new Int32Array(netsize>>3);var i,v;for(i=0;i<netsize;i++){v=(i<<netbiasshift+8)/netsize;network[i]=new Float64Array([v,v,v,0]);freq[i]=intbias/netsize;bias[i]=0}}function unbiasnet(){for(var i=0;i<netsize;i++){network[i][0]>>=netbiasshift;network[i][1]>>=netbiasshift;network[i][2]>>=netbiasshift;network[i][3]=i}}function altersingle(alpha,i,b,g,r){network[i][0]-=alpha*(network[i][0]-b)/initalpha;network[i][1]-=alpha*(network[i][1]-g)/initalpha;network[i][2]-=alpha*(network[i][2]-r)/initalpha}function alterneigh(radius,i,b,g,r){var lo=Math.abs(i-radius);var hi=Math.min(i+radius,netsize);var j=i+1;var k=i-1;var m=1;var p,a;while(j<hi||k>lo){a=radpower[m++];if(j<hi){p=network[j++];p[0]-=a*(p[0]-b)/alpharadbias;p[1]-=a*(p[1]-g)/alpharadbias;p[2]-=a*(p[2]-r)/alpharadbias}if(k>lo){p=network[k--];p[0]-=a*(p[0]-b)/alpharadbias;p[1]-=a*(p[1]-g)/alpharadbias;p[2]-=a*(p[2]-r)/alpharadbias}}}function contest(b,g,r){var bestd=~(1<<31);var bestbiasd=bestd;var bestpos=-1;var bestbiaspos=bestpos;var i,n,dist,biasdist,betafreq;for(i=0;i<netsize;i++){n=network[i];dist=Math.abs(n[0]-b)+Math.abs(n[1]-g)+Math.abs(n[2]-r);if(dist<bestd){bestd=dist;bestpos=i}biasdist=dist-(bias[i]>>intbiasshift-netbiasshift);if(biasdist<bestbiasd){bestbiasd=biasdist;bestbiaspos=i}betafreq=freq[i]>>betashift;freq[i]-=betafreq;bias[i]+=betafreq<<gammashift}freq[bestpos]+=beta;bias[bestpos]-=betagamma;return bestbiaspos}function inxbuild(){var i,j,p,q,smallpos,smallval,previouscol=0,startpos=0;for(i=0;i<netsize;i++){p=network[i];smallpos=i;smallval=p[1];for(j=i+1;j<netsize;j++){q=network[j];if(q[1]<smallval){smallpos=j;smallval=q[1]}}q=network[smallpos];if(i!=smallpos){j=q[0];q[0]=p[0];p[0]=j;j=q[1];q[1]=p[1];p[1]=j;j=q[2];q[2]=p[2];p[2]=j;j=q[3];q[3]=p[3];p[3]=j}if(smallval!=previouscol){netindex[previouscol]=startpos+i>>1;for(j=previouscol+1;j<smallval;j++)netindex[j]=i;previouscol=smallval;startpos=i}}netindex[previouscol]=startpos+maxnetpos>>1;for(j=previouscol+1;j<256;j++)netindex[j]=maxnetpos}function inxsearch(b,g,r){var a,p,dist;var bestd=1e3;var best=-1;var i=netindex[g];var j=i-1;while(i<netsize||j>=0){if(i<netsize){p=network[i];dist=p[1]-g;if(dist>=bestd)i=netsize;else{i++;if(dist<0)dist=-dist;a=p[0]-b;if(a<0)a=-a;dist+=a;if(dist<bestd){a=p[2]-r;if(a<0)a=-a;dist+=a;if(dist<bestd){bestd=dist;best=p[3]}}}}if(j>=0){p=network[j];dist=g-p[1];if(dist>=bestd)j=-1;else{j--;if(dist<0)dist=-dist;a=p[0]-b;if(a<0)a=-a;dist+=a;if(dist<bestd){a=p[2]-r;if(a<0)a=-a;dist+=a;if(dist<bestd){bestd=dist;best=p[3]}}}}}return best}function learn(){var i;var lengthcount=pixels.length;var alphadec=30+(samplefac-1)/3;var samplepixels=lengthcount/(3*samplefac);var delta=~~(samplepixels/ncycles);var alpha=initalpha;var radius=initradius;var rad=radius>>radiusbiasshift;if(rad<=1)rad=0;for(i=0;i<rad;i++)radpower[i]=alpha*((rad*rad-i*i)*radbias/(rad*rad));var step;if(lengthcount<minpicturebytes){samplefac=1;step=3}else if(lengthcount%prime1!==0){step=3*prime1}else if(lengthcount%prime2!==0){step=3*prime2}else if(lengthcount%prime3!==0){step=3*prime3}else{step=3*prime4}var b,g,r,j;var pix=0;i=0;while(i<samplepixels){b=(pixels[pix]&255)<<netbiasshift;g=(pixels[pix+1]&255)<<netbiasshift;r=(pixels[pix+2]&255)<<netbiasshift;j=contest(b,g,r);altersingle(alpha,j,b,g,r);if(rad!==0)alterneigh(rad,j,b,g,r);pix+=step;if(pix>=lengthcount)pix-=lengthcount;i++;if(delta===0)delta=1;if(i%delta===0){alpha-=alpha/alphadec;radius-=radius/radiusdec;rad=radius>>radiusbiasshift;if(rad<=1)rad=0;for(j=0;j<rad;j++)radpower[j]=alpha*((rad*rad-j*j)*radbias/(rad*rad))}}}function buildColormap(){init();learn();unbiasnet();inxbuild()}this.buildColormap=buildColormap;function getColormap(){var map=[];var index=[];for(var i=0;i<netsize;i++)index[network[i][3]]=i;var k=0;for(var l=0;l<netsize;l++){var j=index[l];map[k++]=network[j][0];map[k++]=network[j][1];map[k++]=network[j][2]}return map}this.getColormap=getColormap;this.lookupRGB=inxsearch}module.exports=NeuQuant},{}],4:[function(require,module,exports){var GIFEncoder,renderFrame;GIFEncoder=require("./GIFEncoder.js");renderFrame=function(frame){var encoder,page,stream,transfer;encoder=new GIFEncoder(frame.width,frame.height);if(frame.index===0){encoder.writeHeader()}else{encoder.firstFrame=false}encoder.setTransparent(frame.transparent);encoder.setRepeat(frame.repeat);encoder.setDelay(frame.delay);encoder.setQuality(frame.quality);encoder.setDither(frame.dither);encoder.setGlobalPalette(frame.globalPalette);encoder.addFrame(frame.data);if(frame.last){encoder.finish()}if(frame.globalPalette===true){frame.globalPalette=encoder.getGlobalPalette()}stream=encoder.stream();frame.data=stream.pages;frame.cursor=stream.cursor;frame.pageSize=stream.constructor.pageSize;if(frame.canTransfer){transfer=function(){var i,len,ref,results;ref=frame.data;results=[];for(i=0,len=ref.length;i<len;i++){page=ref[i];results.push(page.buffer)}return results}();return self.postMessage(frame,transfer)}else{return self.postMessage(frame)}};self.onmessage=function(event){return renderFrame(event.data)}},{"./GIFEncoder.js":1}]},{},[4]);
+</script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#1a1a2e;color:#eee;min-height:100vh;display:flex;justify-content:center;align-items:center}
+.app{width:100%;max-width:420px;min-height:100vh;display:flex;flex-direction:column;background:#1a1a2e}
+.steps{display:flex;padding:10px 16px;gap:6px;align-items:center;justify-content:center}
+.step{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:#2a2a3e;color:#888;transition:all .3s}
+.step.active{background:#7c4dff;color:#fff;box-shadow:0 0 12px rgba(124,77,255,.5)}
+.step.done{background:#4caf50;color:#fff}
+.step-line{flex:1;max-width:40px;height:2px;background:#2a2a3e}
+.step-line.done{background:#4caf50}
+.content{flex:1;display:flex;flex-direction:column;padding:0 12px;overflow-y:auto}
+.preview-area{position:relative;width:100%;aspect-ratio:1/1;background:#000;border-radius:10px;overflow:hidden;margin-bottom:8px}
+.preview-area video,.preview-area canvas,.preview-area img{width:100%;height:100%;object-fit:contain}
+.text-overlay{position:absolute;cursor:grab;user-select:none;white-space:nowrap;text-shadow:2px 2px 4px rgba(0,0,0,.7),-1px -1px 2px rgba(0,0,0,.5);pointer-events:auto;line-height:1.2}
+.text-overlay:active{cursor:grabbing}
+.controls{display:flex;flex-direction:column;gap:6px}
+.control-group{background:#2a2a3e;border-radius:8px;padding:10px}
+.control-group label{display:block;font-size:11px;color:#aaa;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+input[type=range]{width:100%;accent-color:#7c4dff}
+input[type=text],select{width:100%;padding:8px 10px;border-radius:6px;border:1px solid #444;background:#1a1a2e;color:#eee;font-size:14px;outline:none}
+input[type=text]:focus,select:focus{border-color:#7c4dff}
+select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'%3E%3C/path%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px}
+.range-labels{display:flex;justify-content:space-between;font-size:11px;color:#888;margin-top:4px}
+.color-options{display:flex;gap:8px;flex-wrap:wrap}
+.color-dot{width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all .2s}
+.color-dot.selected{border-color:#fff;transform:scale(1.15);box-shadow:0 0 8px rgba(255,255,255,.4)}
+.font-options{display:flex;gap:6px;flex-wrap:wrap}
+.font-btn{padding:5px 12px;border-radius:6px;border:1px solid #444;background:#1a1a2e;color:#ccc;font-size:12px;cursor:pointer;transition:all .2s}
+.font-btn.selected{border-color:#7c4dff;background:#7c4dff;color:#fff}
+.speed-btn{padding:5px 12px;border-radius:6px;border:1px solid #444;background:#1a1a2e;color:#ccc;font-size:12px;cursor:pointer;transition:all .2s}
+.speed-btn.selected{border-color:#7c4dff;background:#7c4dff;color:#fff}
+.upload-zone{border:2px dashed #555;border-radius:10px;padding:24px 16px;text-align:center;cursor:pointer;transition:all .2s}
+.upload-zone:hover{border-color:#7c4dff;background:rgba(124,77,255,.05)}
+.upload-zone .icon{font-size:36px;margin-bottom:8px}
+.upload-zone .hint{color:#888;font-size:12px}
+.trim-track{position:relative;height:48px;border-radius:8px;overflow:hidden;cursor:default;user-select:none;touch-action:none}
+.trim-track canvas{position:absolute;top:0;left:0;width:100%;height:100%}
+.trim-mask-left,.trim-mask-right{position:absolute;top:0;height:100%;background:rgba(0,0,0,.55)}
+.trim-mask-left{left:0}
+.trim-mask-right{right:0}
+.trim-range-border{position:absolute;top:0;height:100%;border-top:3px solid #7c4dff;border-bottom:3px solid #7c4dff;pointer-events:none}
+.trim-handle{position:absolute;top:50%;width:20px;height:56px;transform:translate(-50%,-50%);background:#7c4dff;border-radius:4px;cursor:ew-resize;z-index:3;display:flex;align-items:center;justify-content:center;box-shadow:0 0 6px rgba(124,77,255,.5);touch-action:none}
+.trim-handle::after{content:'';width:2px;height:18px;background:rgba(255,255,255,.6);border-radius:1px}
+.trim-time-label{position:absolute;top:-22px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:700;color:#7c4dff;white-space:nowrap;pointer-events:none}
+.btn{padding:12px 20px;border-radius:8px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-primary{background:#7c4dff;color:#fff;width:100%}
+.btn-primary:hover{background:#6a3de8}
+.btn-primary:disabled{background:#444;color:#888;cursor:not-allowed}
+.btn-outline{background:transparent;border:1px solid #7c4dff;color:#7c4dff}
+.actions{padding:10px 12px;display:flex;gap:8px}
+.progress-bar{height:6px;background:#2a2a3e;border-radius:3px;overflow:hidden;margin-bottom:8px}
+.progress-fill{height:100%;background:#7c4dff;transition:width .3s}
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#4caf50;color:#fff;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;z-index:1000;animation:fadeInOut 2.5s forwards}
+@keyframes fadeInOut{0%{opacity:0;transform:translateX(-50%) translateY(20px)}15%{opacity:1;transform:translateX(-50%) translateY(0)}85%{opacity:1}100%{opacity:0}}
+.toast.error{background:#f44336}
+#fileInput,#photoInput{display:none}
+.empty-video{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:linear-gradient(135deg,#1e2a3a 0%,#2a1a3e 50%,#1a2a2e 100%)}
+.empty-video .icon{font-size:64px;margin-bottom:8px}
+.empty-video div:last-child{color:#bbb;font-size:14px}
+.spinner{width:40px;height:40px;border:3px solid #2a2a3e;border-top-color:#7c4dff;border-radius:50%;animation:spin .8s linear infinite;margin:20px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+.photo-nav{display:flex;gap:8px;align-items:center;justify-content:center;margin-bottom:8px}
+.photo-nav button{width:36px;height:36px;border-radius:50%;border:1px solid #555;background:#2a2a3e;color:#ccc;font-size:16px;cursor:pointer}
+.photo-count{font-size:13px;color:#aaa}
+.thumb-card{z-index:1}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="steps" id="stepIndicator"></div>
+  <div class="content" id="content"></div>
+  <div class="actions" id="actions"></div>
+</div>
+<input type="file" id="fileInput" accept="video/*">
+<input type="file" id="photoInput" accept="image/*" multiple>
+
+<script>
+const state = {
+  step: 0,
+  mediaType: 'video',
+  videoFile: null, videoUrl: null, videoDuration: 0,
+  photos: [], photoUrls: [],
+  photoTexts: [],
+  currentPhotoIdx: 0,
+  frameDelay: 500,
+  trimStart: 0, trimEnd: 0,
+  textContent: '',
+  textFont: 'SimHei, Microsoft YaHei, sans-serif',
+  textWeight: '700',
+  textColor: '#FFFFFF',
+  textX: 0.5, textY: 0.5, textSize: 36,
+  gifBlob: null,
+  speed: 1,
+  qualityLevel: 'medium',
+  maxFrames: 60,
+  sampleMode: 'truncate'
+};
+
+Object.defineProperty(state, 'isSinglePhoto', {
+  get() { return state.mediaType === 'photo' && state.photos.length === 1; }
+});
+Object.defineProperty(state, 'isMultiPhoto', {
+  get() { return state.mediaType === 'photo' && state.photos.length >= 2; }
+});
+
+const QUALITY_MAP = {
+  low:    { width: 360, gifQuality: 20, label: '流畅' },
+  medium: { width: 480, gifQuality: 10, label: '标准' },
+  high:   { width: 640, gifQuality: 3,  label: '高清' }
+};
+
+const fonts = [
+  { label: '黑体', value: 'SimHei, Microsoft YaHei, sans-serif', weight: '700' },
+  { label: '楷体', value: 'KaiTi, STKaiti, serif', weight: '700' },
+  { label: '仿宋', value: 'FangSong, STFangsong, serif', weight: '700' },
+  { label: '默认', value: 'Arial, sans-serif', weight: '700' },
+  { label: '粗黑搞怪', value: 'Impact, Arial Black, Noto Sans SC, sans-serif', weight: '900' },
+  { label: '手写涂鸦', value: 'Caveat, Comic Sans MS, STXingkai, cursive', weight: '700' },
+  { label: '萌萌圆体', value: 'ZCOOL KuaiLe, Comic Neue, PingFang SC, sans-serif', weight: '400' },
+  { label: '圆体', value: 'Yuanti SC, PingFang SC, sans-serif', weight: '700' },
+];
+
+const colors = ['#FFFFFF','#000000','#FF1744','#FFD600','#2979FF','#00E676'];
+
+let GIF_WORKER_URL = null;
+(function() {
+  var src = document.getElementById('gifWorkerSrc');
+  if (src && src.textContent) {
+    var blob = new Blob([src.textContent], { type: 'application/javascript' });
+    GIF_WORKER_URL = URL.createObjectURL(blob);
+  }
+})();
+
+let videoEl = null;
+let isDragging = false;
+let dragStart = { x: 0, y: 0 };
+let textStartPos = { x: 0, y: 0 };
+let slideshowTimer = null;
+
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+
+function showToast(msg, error) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (error ? ' error' : '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2600);
+}
+function formatTime(sec) {
+  const m = Math.floor(sec / 60), s = (sec % 60).toFixed(1);
+  return `${m}:${s.padStart(4,'0')}`;
+}
+function clearSlideshow() {
+  if (slideshowTimer) { clearInterval(slideshowTimer); slideshowTimer = null; }
+}
+
+// ==================== STEPS ====================
+function updateSteps() {
+  const isPhoto = state.mediaType === 'photo';
+  let steps;
+  if (isPhoto && state.isSinglePhoto) {
+    steps = ['选取素材', '添加文字', '预览导出'];
+  } else if (isPhoto && state.isMultiPhoto) {
+    steps = ['选取素材', '排序编辑', '添加文字', '预览导出'];
+  } else {
+    steps = ['选取素材', '裁剪时间', '添加文字', '预览导出'];
+  }
+  let html = steps.map((label, i) => {
+    let cls = 'step';
+    if (i === state.step) cls += ' active';
+    else if (i < state.step) cls += ' done';
+    return `<div class="${cls}">${i + 1}</div>`;
+  }).join('<div class="step-line"></div>');
+  $('#stepIndicator').innerHTML = html;
+  $$('.step-line').forEach((el,i) => el.classList.toggle('done', i < state.step));
+}
+
+// ==================== RENDER DISPATCH ====================
+function render() {
+  clearSlideshow();
+  updateSteps();
+  if (state.mediaType === 'photo') {
+    if (state.step === 0) renderStep0();
+    else if (state.step === 1 && state.isSinglePhoto) renderPhotoText();
+    else if (state.step === 1 && state.isMultiPhoto) renderBurstOrder();
+    else if (state.step === 2 && state.isMultiPhoto) renderPhotoText();
+    else if ((state.step === 2 && state.isSinglePhoto) || (state.step === 3 && state.isMultiPhoto)) renderPhotoPreview();
+  } else {
+    if (state.step === 0) renderStep0();
+    else if (state.step === 1) renderVideoTrim();
+    else if (state.step === 2) renderVideoText();
+    else if (state.step === 3) renderVideoPreview();
+  }
+}
+
+// ==================== STEP 0 ====================
+function renderStep0() {
+  const isPhoto = state.mediaType === 'photo';
+  const hasVideo = !isPhoto && !!state.videoFile;
+  const hasPhoto = isPhoto && state.photos.length > 0;
+  const hasMedia = isPhoto ? hasPhoto : hasVideo;
+
+  let icon, hint;
+  if (isPhoto) {
+    icon = '🖼';
+    hint = hasPhoto ? `图片转GIF · 已选 ${state.photos.length} 张` : '点击下方按钮选择素材';
+  } else {
+    icon = '🎬';
+    hint = hasVideo ? `${state.videoFile.name} (${formatTime(state.videoDuration)})` : '点击下方按钮选择素材';
+  }
+
+  let nextLabel;
+  if (isPhoto && hasPhoto && state.photos.length === 1) nextLabel = '下一步：添加文字';
+  else if (isPhoto && hasPhoto) nextLabel = '下一步：排序编辑';
+  else if (hasVideo) nextLabel = '下一步：裁剪时间';
+  else nextLabel = '请先选择素材';
+
+  $('#content').innerHTML = `
+    <div class="preview-area" id="previewArea">
+      <div class="empty-video"><div class="icon">${icon}</div><div>${hint}</div></div>
+    </div>
+    <div class="controls">
+      <div style="display:flex;gap:10px">
+        <div class="upload-zone" id="uploadVideo" style="flex:1">
+          <div class="icon">🎬</div><div style="font-size:14px;margin-bottom:2px">选取视频</div><div class="hint">MP4 / MOV</div>
+        </div>
+        <div class="upload-zone" id="uploadPhoto" style="flex:1">
+          <div class="icon">🖼</div><div style="font-size:14px;margin-bottom:2px">图片转GIF</div><div class="hint">1~20 张</div>
+        </div>
+      </div>
+    </div>`;
+  $('#actions').innerHTML = `<button class="btn btn-primary" id="btnNext" ${hasMedia ? '' : 'disabled'}>${nextLabel}</button>`;
+
+  $('#uploadVideo').onclick = selectVideo;
+  $('#uploadPhoto').onclick = selectPhoto;
+  const btnNext = $('#btnNext');
+  if (!hasMedia) btnNext.onclick = () => showToast('请先选择素材', true);
+  else btnNext.onclick = () => { state.step = 1; render(); };
+}
+
+function selectVideo() {
+  state.mediaType = 'video'; clearPhotoData(); $('#fileInput').click();
+}
+function selectPhoto() {
+  state.mediaType = 'photo';
+  if (state.videoUrl) { URL.revokeObjectURL(state.videoUrl); state.videoUrl = null; state.videoFile = null; state.videoDuration = 0; }
+  clearPhotoData(); $('#photoInput').click();
+}
+function clearPhotoData() {
+  state.photoUrls.forEach(u => URL.revokeObjectURL(u));
+  state.photos = []; state.photoUrls = []; state.photoTexts = [];
+  state.frameDelay = 500; state.currentPhotoIdx = 0;
+}
+
+// ==================== VIDEO TRIM ====================
+function renderVideoTrim() {
+  const maxTrim = Math.min(10, state.videoDuration);
+  if (state.trimEnd === 0) { state.trimStart = 0; state.trimEnd = Math.min(maxTrim, state.videoDuration); }
+  $('#content').innerHTML = `
+    <div class="preview-area" id="previewArea" style="position:relative">
+      <video id="videoPlayer" src="${state.videoUrl}" preload="auto" muted loop playsinline style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain"></video>
+      <canvas id="trimPreviewCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%"></canvas>
+    </div>
+    <div class="controls">
+      <div class="control-group">
+        <label>裁剪范围（最长10秒）</label>
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px">
+          <span>起始: <b id="trimStartLabel">${formatTime(state.trimStart)}</b></span>
+          <span>时长: <b id="trimDurLabel">${(state.trimEnd - state.trimStart).toFixed(1)}s</b></span>
+          <span>结束: <b id="trimEndLabel">${formatTime(state.trimEnd)}</b></span>
+        </div>
+        <div class="trim-track" id="trimTrack" style="position:relative">
+          <canvas id="thumbCanvas"></canvas>
+          <div class="trim-mask-left" id="maskLeft" style="left:0;width:${state.trimStart/state.videoDuration*100}%"></div>
+          <div class="trim-mask-right" id="maskRight" style="right:0;width:${(1-state.trimEnd/state.videoDuration)*100}%"></div>
+          <div class="trim-range-border" id="rangeBorder" style="left:${state.trimStart/state.videoDuration*100}%;width:${(state.trimEnd-state.trimStart)/state.videoDuration*100}%"></div>
+          <div class="trim-handle" id="handleStart" style="left:${state.trimStart/state.videoDuration*100}%"><div class="trim-time-label">${formatTime(state.trimStart)}</div></div>
+          <div class="trim-handle" id="handleEnd" style="left:${state.trimEnd/state.videoDuration*100}%"><div class="trim-time-label">${formatTime(state.trimEnd - state.trimStart)}</div></div>
+        </div>
+        <div style="margin-top:8px;display:flex;align-items:center;gap:6px;font-size:11px">
+          <span style="color:#aaa">倍速:</span>
+          ${[0.25,0.5,1,1.5,2].map(s=>{const l=s<1?(s===0.25?'1/4x':'1/2x'):(s===1?'原速':s+'x');const sel=state.speed===s?' selected':'';return`<button class="font-btn speed-btn${sel}" data-speed="${s}">${l}</button>`;}).join('')}
+        </div>
+        <div style="margin-top:6px;font-size:11px" id="trimEstimate">预计 <b id="estFrames">0</b> 帧 / 约 <b id="estSize">0</b> KB</div>
+      </div>
+      <div class="control-group" style="text-align:center"><button class="btn btn-outline" id="btnPreview" style="width:auto;display:inline-block">▶ 预览片段</button></div>
+    </div>`;
+  $('#actions').innerHTML = `<button class="btn btn-outline" id="btnBack">上一步</button><button class="btn btn-primary" id="btnNext">下一步：添加文字</button>`;
+
+  videoEl = $('#videoPlayer');
+
+  function drawTrimFrame() {
+    const canvas = $('#trimPreviewCanvas'), area = $('#previewArea');
+    if (!canvas || !area) return;
+    const W = area.clientWidth, H = area.clientHeight;
+    if (!W || !H) return;
+    if (canvas.width !== W) canvas.width = W;
+    if (canvas.height !== H) canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    if (videoEl.videoWidth && videoEl.videoHeight && videoEl.readyState >= 2) {
+      const scale = Math.min(W / videoEl.videoWidth, H / videoEl.videoHeight);
+      const dw = videoEl.videoWidth * scale, dh = videoEl.videoHeight * scale;
+      ctx.drawImage(videoEl, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    }
+  }
+
+  videoEl.addEventListener('loadeddata', () => { videoEl.currentTime = state.trimStart; }, { once: true });
+  videoEl.addEventListener('seeked', () => { drawTrimFrame(); });
+
+  function updateEstimate() {
+    const dur = state.trimEnd - state.trimStart, fps = 8;
+    const rawFrames = Math.ceil(dur * fps / state.speed);
+    const frames = Math.min(rawFrames, state.maxFrames);
+    const q = QUALITY_MAP[state.qualityLevel];
+    const estKB = Math.round(frames * q.width * 0.018);
+    const overflow = rawFrames > state.maxFrames;
+    const te = $('#trimEstimate');
+    let html;
+    if (overflow && state.sampleMode === 'uniform') { html = `预计 <b id="estFrames">${frames}</b> 帧（均匀采样自 ${rawFrames} 帧） / 约 <b id="estSize">${estKB}</b> KB`; if (te) te.style.color = '#448aff'; }
+    else if (overflow) { html = `预计 <b id="estFrames">${frames}</b> 帧（已截断，上限 ${state.maxFrames} 帧） / 约 <b id="estSize">${estKB}</b> KB`; if (te) te.style.color = '#ff6b6b'; }
+    else { html = `预计 <b id="estFrames">${frames}</b> 帧 / 约 <b id="estSize">${estKB}</b> KB`; if (te) te.style.color = '#aaa'; }
+    const btnGroup = $('#overflowBtns');
+    if (overflow && te) {
+      if (!btnGroup) { te.insertAdjacentHTML('afterend', '<div id="overflowBtns" style="margin-top:6px;display:flex;gap:6px"></div>'); }
+      const bg = $('#overflowBtns');
+      if (state.sampleMode === 'uniform') {
+        bg.innerHTML = '<button class="font-btn" id="btnCancelSample" style="font-size:11px">取消采样</button>';
+        setTimeout(() => { const b = $('#btnCancelSample'); if (b) b.onclick = () => { state.sampleMode = 'truncate'; updateEstimate(); }; }, 0);
+      } else {
+        bg.innerHTML = '<button class="font-btn" id="btnTrimShorter" style="font-size:11px">缩短选段</button><button class="font-btn" id="btnUniformSample" style="font-size:11px">均匀采样</button>';
+        setTimeout(() => {
+          const b1 = $('#btnTrimShorter'), b2 = $('#btnUniformSample');
+          if (b1) b1.onclick = () => { const track = $('#trimTrack'); if (track) { track.style.transition = 'none'; track.style.boxShadow = '0 0 16px #7c4dff'; setTimeout(() => { track.style.transition = 'box-shadow 0.8s'; track.style.boxShadow = 'none'; }, 100); } };
+          if (b2) b2.onclick = () => { state.sampleMode = 'uniform'; updateEstimate(); };
+        }, 0);
+      }
+    } else if (btnGroup) { btnGroup.remove(); if (state.sampleMode !== 'truncate') state.sampleMode = 'truncate'; }
+    if (te) te.innerHTML = html;
+  }
+
+  $$('.speed-btn').forEach(btn => {
+    btn.onclick = () => { state.speed = parseFloat(btn.dataset.speed); $$('.speed-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); updateEstimate(); };
+  });
+  updateEstimate();
+
+  const track = $('#trimTrack'), handleStart = $('#handleStart'), handleEnd = $('#handleEnd');
+  const maskLeft = $('#maskLeft'), maskRight = $('#maskRight'), rangeBorder = $('#rangeBorder');
+  let activeHandle = null, dragging = false;
+
+  function updateUI() {
+    const pStart = state.trimStart / state.videoDuration * 100, pEnd = state.trimEnd / state.videoDuration * 100;
+    handleStart.style.left = pStart + '%'; handleEnd.style.left = pEnd + '%';
+    maskLeft.style.width = pStart + '%'; maskRight.style.width = (100 - pEnd) + '%';
+    rangeBorder.style.left = pStart + '%'; rangeBorder.style.width = (pEnd - pStart) + '%';
+    handleStart.querySelector('.trim-time-label').textContent = formatTime(state.trimStart);
+    handleEnd.querySelector('.trim-time-label').textContent = formatTime(state.trimEnd);
+    $('#trimStartLabel').textContent = formatTime(state.trimStart);
+    $('#trimEndLabel').textContent = formatTime(state.trimEnd);
+    $('#trimDurLabel').textContent = (state.trimEnd - state.trimStart).toFixed(1) + 's';
+    videoEl.currentTime = state.trimStart; updateEstimate();
+  }
+
+  function getPosFromEvent(e) {
+    const rect = track.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    return Math.max(0, Math.min(1, x / rect.width)) * state.videoDuration;
+  }
+
+  function onPointerDown(e) {
+    const target = e.target.closest('.trim-handle'); if (!target) return;
+    activeHandle = target.id === 'handleStart' ? 'start' : 'end';
+    dragging = true; target.setPointerCapture(e.pointerId); e.preventDefault();
+  }
+  function onPointerMove(e) {
+    if (!dragging || !activeHandle) return;
+    const pos = getPosFromEvent(e);
+    if (activeHandle === 'start') {
+      state.trimStart = Math.max(0, Math.min(pos, state.trimEnd - 0.1));
+      if (state.trimEnd - state.trimStart > maxTrim) state.trimEnd = Math.min(state.trimStart + maxTrim, state.videoDuration);
+    } else {
+      state.trimEnd = Math.min(state.videoDuration, Math.max(pos, state.trimStart + 0.1));
+      if (state.trimEnd - state.trimStart > maxTrim) state.trimStart = Math.max(0, state.trimEnd - maxTrim);
+    }
+    updateUI();
+  }
+  function onPointerUp(e) {
+    if (dragging) { const h = activeHandle === 'start' ? handleStart : handleEnd; h.releasePointerCapture(e.pointerId); }
+    dragging = false; activeHandle = null;
+  }
+
+  handleStart.onpointerdown = onPointerDown; handleEnd.onpointerdown = onPointerDown;
+  track.onpointermove = onPointerMove; track.onpointerup = onPointerUp; track.onpointerleave = onPointerUp;
+
+  $('#btnPreview').onclick = () => {
+    videoEl.currentTime = state.trimStart; videoEl.playbackRate = state.speed; videoEl.play();
+    let previewRaf;
+    function checkEnd() { drawTrimFrame(); if (videoEl.currentTime >= state.trimEnd || videoEl.paused) { videoEl.pause(); videoEl.currentTime = state.trimStart; cancelAnimationFrame(previewRaf); return; } previewRaf = requestAnimationFrame(checkEnd); }
+    previewRaf = requestAnimationFrame(checkEnd);
+  };
+  $('#btnBack').onclick = () => { state.step = 0; render(); };
+  $('#btnNext').onclick = () => { state.step = 2; render(); };
+
+  generateThumbnails();
+}
+
+async function generateThumbnails() {
+  const canvas = $('#thumbCanvas'); if (!canvas) return;
+  const ctx = canvas.getContext('2d'); canvas.width = 360; canvas.height = 48;
+  const count = 20; const w = canvas.width / count;
+  const video = document.createElement('video'); video.muted = true; video.preload = 'auto'; video.setAttribute('playsinline', '');
+  const dataReady = video.readyState >= 2 ? Promise.resolve() : new Promise(r => { video.addEventListener('loadeddata', r, { once: true }); });
+  video.src = state.videoUrl; await dataReady;
+  for (let i = 0; i < count; i++) {
+    const t = (i / count) * Math.min(state.videoDuration, 20);
+    if (Math.abs(video.currentTime - t) > 0.001) { await new Promise(r => { video.addEventListener('seeked', r, { once: true }); video.currentTime = t; }); }
+    ctx.drawImage(video, i * w, 0, w, 48);
+  }
+  video.remove();
+}
+
+// ==================== VIDEO TEXT ====================
+function renderVideoText() {
+  $('#content').innerHTML = `
+    <div class="preview-area" id="previewArea" style="position:relative;overflow:hidden">
+      <video id="mediaPlayer" src="${state.videoUrl}" preload="auto" muted playsinline style="width:100%;height:100%;object-fit:contain"></video>
+      <div class="text-overlay" id="textOverlay" style="font-family:${state.textFont};color:${state.textColor};font-weight:${state.textWeight};font-size:${state.textSize}px;left:${state.textX*100}%;top:${state.textY*100}%;transform:translate(-50%,-50%)">${state.textContent || '输入文字'}</div>
+    </div>
+    <div class="controls">
+      <div class="control-group">
+        <label>文字内容（最多6字）</label>
+        <input type="text" id="textInput" value="${state.textContent}" placeholder="输入表情包配文..." maxlength="6">
+        <div style="font-size:11px;color:#888;margin-top:4px;text-align:right" id="charCount">${state.textContent.length}/6</div>
+      </div>
+      <div class="control-group">
+        <label>字体</label>
+        <div class="font-options">${fonts.map((f,i)=>`<button class="font-btn${state.textFont===f.value?' selected':''}" data-font="${f.value}" data-weight="${f.weight}">${f.label}</button>`).join('')}</div>
+      </div>
+      <div class="control-group">
+        <label>颜色</label>
+        <div class="color-options">${colors.map(c=>`<div class="color-dot${state.textColor===c?' selected':''}" data-color="${c}" style="background:${c}"></div>`).join('')}</div>
+      </div>
+      <div class="control-group">
+        <label>字号</label>
+        <input type="range" id="sizeSlider" min="16" max="80" value="${state.textSize}">
+        <div class="range-labels"><span>16px</span><span>${state.textSize}px</span><span>80px</span></div>
+      </div>
+      <div style="text-align:center;font-size:12px;color:#666">💡 拖拽文字调整位置 · 双击居中</div>
+    </div>`;
+  $('#actions').innerHTML = `<button class="btn btn-outline" id="btnBack">上一步</button><button class="btn btn-primary" id="btnNext">下一步：预览导出</button>`;
+
+  videoEl = $('#mediaPlayer'); videoEl.currentTime = state.trimStart;
+
+  const overlay = $('#textOverlay');
+  const textInput = $('#textInput');
+  textInput.oninput = () => {
+    state.textContent = textInput.value;
+    overlay.textContent = state.textContent || '输入文字';
+    overlay.style.display = '';
+    $('#charCount').textContent = state.textContent.length + '/6';
+  };
+
+  $$('.font-btn').forEach(btn => {
+    btn.onclick = () => {
+      state.textFont = btn.dataset.font; state.textWeight = btn.dataset.weight || '700';
+      overlay.style.fontFamily = state.textFont; overlay.style.fontWeight = state.textWeight;
+      $$('.font-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected');
+    };
+  });
+
+  $$('.color-dot').forEach(dot => {
+    dot.onclick = () => {
+      state.textColor = dot.dataset.color; overlay.style.color = state.textColor;
+      $$('.color-dot').forEach(d => d.classList.remove('selected')); dot.classList.add('selected');
+    };
+  });
+
+  $('#sizeSlider').oninput = () => {
+    state.textSize = parseInt($('#sizeSlider').value);
+    overlay.style.fontSize = state.textSize + 'px';
+    const labels = $('#sizeSlider').nextElementSibling;
+    if (labels && labels.children[1]) labels.children[1].textContent = state.textSize + 'px';
+  };
+
+  overlay.onpointerdown = (e) => {
+    isDragging = true; overlay.setPointerCapture(e.pointerId);
+    dragStart = { x: e.clientX, y: e.clientY };
+    textStartPos = { x: state.textX * 100, y: state.textY * 100 }; e.preventDefault();
+  };
+  overlay.onpointermove = (e) => {
+    if (!isDragging) return;
+    const rect = $('#previewArea').getBoundingClientRect();
+    const dx = (e.clientX - dragStart.x) / rect.width * 100;
+    const dy = (e.clientY - dragStart.y) / rect.height * 100;
+    let nx = textStartPos.x + dx, ny = textStartPos.y + dy;
+    nx = Math.max(5, Math.min(95, nx)); ny = Math.max(5, Math.min(95, ny));
+    state.textX = nx / 100; state.textY = ny / 100;
+    overlay.style.left = nx + '%'; overlay.style.top = ny + '%';
+  };
+  overlay.onpointerup = () => { isDragging = false; };
+  overlay.ondblclick = () => {
+    state.textX = 0.5; state.textY = 0.5; overlay.style.left = '50%'; overlay.style.top = '50%';
+  };
+
+  $('#btnBack').onclick = () => { state.step = 1; render(); };
+  $('#btnNext').onclick = () => { state.step = 3; render(); };
+}
+
+// ==================== VIDEO PREVIEW + EXPORT ====================
+function renderVideoPreview() {
+  const dur = state.trimEnd - state.trimStart, fps = 8;
+  const rawFrames = Math.ceil(dur * fps / state.speed);
+  const frames = Math.min(rawFrames, state.maxFrames);
+  const q = QUALITY_MAP[state.qualityLevel];
+  const isPhoto = false, isBurst = false;
+  const estKB = Math.round(frames * q.width * 0.018);
+
+  $('#content').innerHTML = `
+    <div class="preview-area" id="previewArea" style="position:relative;overflow:hidden">
+      <video id="mediaPlayer" src="${state.videoUrl}" preload="auto" muted playsinline style="width:100%;height:100%;object-fit:contain"></video>
+      <div class="text-overlay" id="textOverlay" style="font-family:${state.textFont};color:${state.textColor};font-weight:${state.textWeight};font-size:${state.textSize}px;left:${state.textX*100}%;top:${state.textY*100}%;transform:translate(-50%,-50%)">${state.textContent || ''}</div>
+    </div>
+    <div class="controls">
+      <div class="control-group">
+        <label>画质</label>
+        <div class="font-options">${Object.entries(QUALITY_MAP).map(([k,qq])=>`<button class="font-btn${state.qualityLevel===k?' selected':''}" data-q="${k}">${qq.label} (${qq.width}px)</button>`).join('')}</div>
+      </div>
+      <div style="font-size:12px;color:#aaa;text-align:center;margin-top:4px">${formatTime(state.trimStart)} ~ ${formatTime(state.trimEnd)} · 倍速: ${state.speed}x · 预计 ${frames} 帧 / ${estKB}KB</div>
+      ${state.gifBlob ? `<div style="text-align:center;margin-top:8px"><img src="${URL.createObjectURL(state.gifBlob)}" style="width:100%;border-radius:6px"></div><div style="font-size:12px;color:#aaa;text-align:center">${(state.gifBlob.size/1024).toFixed(0)}KB</div>` : ''}
+      <div id="exportProgress" style="display:none"><div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div><div style="font-size:12px;color:#aaa;text-align:center" id="progressLabel"></div></div>
+    </div>`;
+  $('#actions').innerHTML = `<button class="btn btn-outline" id="btnBack">上一步</button><button class="btn btn-primary" id="btnExport">导出 GIF</button>`;
+
+  videoEl = $('#mediaPlayer');
+  videoEl.loop = true; videoEl.currentTime = state.trimStart;
+  videoEl.playbackRate = state.speed;
+  videoEl.onloadeddata = () => { videoEl.play(); };
+  videoEl.addEventListener('timeupdate', () => { if (videoEl.currentTime >= state.trimEnd) videoEl.currentTime = state.trimStart; });
+
+  $$('.font-btn').forEach(btn => {
+    btn.onclick = () => { state.qualityLevel = btn.dataset.q; renderVideoPreview(); };
+  });
+  $('#btnBack').onclick = () => { state.gifBlob = null; state.step = 2; render(); };
+  $('#btnExport').onclick = exportVideoGIF;
+}
+
+// ==================== BURST ORDER ====================
+function renderBurstOrder() {
+  const dur = state.photos.length * state.frameDelay / 1000;
+  const q = QUALITY_MAP[state.qualityLevel];
+  const estKB = Math.round(state.photos.length * q.width * 0.018);
+
+  const thumbHTML = state.photos.map((p, i) => `
+    <div class="thumb-card" draggable="true" data-idx="${i}" style="position:relative;width:72px;height:72px;border-radius:6px;overflow:hidden;border:2px solid transparent;cursor:grab;flex-shrink:0">
+      <img src="${state.photoUrls[i]}" style="width:100%;height:100%;object-fit:cover">
+      <span class="thumb-del" data-idx="${i}" style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:12px;line-height:18px;text-align:center;cursor:pointer">×</span>
+    </div>
+  `).join('');
+
+  $('#content').innerHTML = `
+    <div class="controls" style="gap:10px">
+      <div class="control-group">
+        <label>帧排序（${state.photos.length}/20 张）— 可拖拽排序，点击 × 删除</label>
+        <div id="thumbGrid" style="display:flex;gap:6px;flex-wrap:wrap;min-height:80px">${thumbHTML}</div>
+        ${state.photos.length < 20 ? `<button class="btn btn-outline" id="btnAddMore" style="margin-top:8px;width:100%">+ 添加更多照片</button>` : ''}
+      </div>
+      <div class="control-group">
+        <label>帧间隔</label>
+        <input type="range" id="delaySlider" min="500" max="1500" value="${state.frameDelay}" style="width:100%">
+        <div class="range-labels"><span>500ms</span><span>${state.frameDelay}ms</span><span>1500ms</span></div>
+      </div>
+      <div id="burstEstimate" style="font-size:12px;color:#aaa;text-align:center">预计 ${state.photos.length} 帧 / ${dur.toFixed(1)}s / 约 ${estKB}KB</div>
+    </div>`;
+  $('#actions').innerHTML = `<button class="btn btn-outline" id="btnBack">上一步</button><button class="btn btn-primary" id="btnNext">下一步：添加文字</button>`;
+
+  $('#btnBack').onclick = () => { state.step = 0; render(); };
+  $('#btnNext').onclick = () => { state.step = 2; render(); };
+  $('#delaySlider').oninput = (e) => { state.frameDelay = parseInt(e.target.value); renderBurstOrder(); };
+
+  let dragIdx = -1;
+  $$('.thumb-card').forEach(card => {
+    card.ondragstart = (e) => { dragIdx = parseInt(card.dataset.idx); e.dataTransfer.effectAllowed = 'move'; };
+    card.ondragover = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
+    card.ondrop = (e) => {
+      e.preventDefault(); const toIdx = parseInt(card.dataset.idx);
+      if (dragIdx !== toIdx) {
+        [state.photos[dragIdx],state.photos[toIdx]]=[state.photos[toIdx],state.photos[dragIdx]];
+        [state.photoUrls[dragIdx],state.photoUrls[toIdx]]=[state.photoUrls[toIdx],state.photoUrls[dragIdx]];
+        [state.photoTexts[dragIdx],state.photoTexts[toIdx]]=[state.photoTexts[toIdx],state.photoTexts[dragIdx]];
+        renderBurstOrder();
+      }
+    };
+  });
+  $$('.thumb-del').forEach(btn => { btn.onclick = (e) => { e.stopPropagation(); const idx = parseInt(btn.dataset.idx); URL.revokeObjectURL(state.photoUrls[idx]); state.photos.splice(idx,1); state.photoUrls.splice(idx,1); state.photoTexts.splice(idx,1); renderBurstOrder(); }; });
+  const addBtn = $('#btnAddMore'); if (addBtn) addBtn.onclick = () => $('#photoInput').click();
+}
+
+// ==================== PHOTO TEXT (adaptive) ====================
+function getPhotoText(idx) {
+  if (state.photoTexts[idx] && state.photoTexts[idx].content) return state.photoTexts[idx];
+  for (let i = idx - 1; i >= 0; i--) { if (state.photoTexts[i] && state.photoTexts[i].content) return state.photoTexts[i]; }
+  return null;
+}
+
+function saveCurrentPhotoText() {
+  const idx = state.currentPhotoIdx;
+  const textInput = $('#textInput');
+  state.photoTexts[idx] = {
+    content: textInput ? textInput.value : '',
+    fontName: state.textFont, color: state.textColor, weight: state.textWeight,
+    x: state.textX, y: state.textY, size: state.textSize
+  };
+}
+
+function loadCurrentPhotoText() {
+  const idx = state.currentPhotoIdx;
+  const pt = getPhotoText(idx);
+  if (pt) {
+    state.textContent = pt.content; state.textFont = pt.fontName; state.textColor = pt.color;
+    state.textWeight = pt.weight || '700'; state.textX = pt.x; state.textY = pt.y; state.textSize = pt.size;
+  } else {
+    state.textContent = ''; state.textFont = 'SimHei, Microsoft YaHei, sans-serif'; state.textColor = '#FFFFFF';
+    state.textWeight = '700'; state.textX = 0.5; state.textY = 0.5; state.textSize = 36;
+  }
+}
+
+function renderPhotoText() {
+  loadCurrentPhotoText();
+  const isSingle = state.isSinglePhoto;
+  const navHTML = isSingle ? '' : `<div class="photo-nav"><button id="navPrev">←</button><span class="photo-count">第 ${state.currentPhotoIdx+1}/${state.photos.length} 张</span><button id="navNext">→</button></div>`;
+
+  $('#content').innerHTML = `
+    <div class="preview-area" id="previewArea" style="position:relative;overflow:hidden">
+      <img src="${state.photoUrls[isSingle?0:state.currentPhotoIdx]}" style="width:100%;height:100%;object-fit:contain" id="mediaPlayer">
+      <div class="text-overlay" id="textOverlay" style="font-family:${state.textFont};color:${state.textColor};font-weight:${state.textWeight};font-size:${state.textSize}px;left:${state.textX*100}%;top:${state.textY*100}%;transform:translate(-50%,-50%)">${state.textContent || '输入文字'}</div>
+    </div>
+    ${navHTML}
+    <div class="controls">
+      <div class="control-group">
+        <label>文字内容（最多6字）</label>
+        <input type="text" id="textInput" value="${state.textContent}" placeholder="输入表情包配文..." maxlength="6">
+        <div style="font-size:11px;color:#888;margin-top:4px;text-align:right" id="charCount">${state.textContent.length}/6</div>
+      </div>
+      <div class="control-group"><label>字体</label><div class="font-options">${fonts.map((f,i)=>`<button class="font-btn${state.textFont===f.value?' selected':''}" data-font="${f.value}" data-weight="${f.weight}">${f.label}</button>`).join('')}</div></div>
+      <div class="control-group"><label>颜色</label><div class="color-options">${colors.map(c=>`<div class="color-dot${state.textColor===c?' selected':''}" data-color="${c}" style="background:${c}"></div>`).join('')}</div></div>
+      <div class="control-group"><label>字号</label><input type="range" id="sizeSlider" min="16" max="80" value="${state.textSize}"><div class="range-labels"><span>16px</span><span>${state.textSize}px</span><span>80px</span></div></div>
+      <div style="text-align:center;font-size:12px;color:#666">💡 拖拽文字调整位置 · 双击居中</div>
+    </div>`;
+  $('#actions').innerHTML = `<button class="btn btn-outline" id="btnBack">上一步</button><button class="btn btn-primary" id="btnNext">下一步：预览导出</button>`;
+
+  const overlay = $('#textOverlay'), textInput = $('#textInput');
+  textInput.oninput = () => {
+    state.textContent = textInput.value; overlay.textContent = state.textContent || '输入文字';
+    $('#charCount').textContent = state.textContent.length + '/6';
+    if (!isSingle) saveCurrentPhotoText();
+  };
+  $$('.font-btn').forEach(btn => {
+    btn.onclick = () => {
+      state.textFont = btn.dataset.font; state.textWeight = btn.dataset.weight || '700';
+      overlay.style.fontFamily = state.textFont; overlay.style.fontWeight = state.textWeight;
+      $$('.font-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected');
+      if (!isSingle) saveCurrentPhotoText();
+    };
+  });
+  $$('.color-dot').forEach(dot => {
+    dot.onclick = () => {
+      state.textColor = dot.dataset.color; overlay.style.color = state.textColor;
+      $$('.color-dot').forEach(d => d.classList.remove('selected')); dot.classList.add('selected');
+      if (!isSingle) saveCurrentPhotoText();
+    };
+  });
+  $('#sizeSlider').oninput = () => {
+    state.textSize = parseInt($('#sizeSlider').value); overlay.style.fontSize = state.textSize + 'px';
+    const labels = $('#sizeSlider').nextElementSibling;
+    if (labels && labels.children[1]) labels.children[1].textContent = state.textSize + 'px';
+    if (!isSingle) saveCurrentPhotoText();
+  };
+
+  overlay.onpointerdown = (e) => {
+    isDragging = true; overlay.setPointerCapture(e.pointerId);
+    dragStart = { x: e.clientX, y: e.clientY };
+    textStartPos = { x: state.textX * 100, y: state.textY * 100 }; e.preventDefault();
+  };
+  overlay.onpointermove = (e) => {
+    if (!isDragging) return;
+    const rect = $('#previewArea').getBoundingClientRect();
+    const dx = (e.clientX - dragStart.x) / rect.width * 100, dy = (e.clientY - dragStart.y) / rect.height * 100;
+    let nx = textStartPos.x + dx, ny = textStartPos.y + dy;
+    nx = Math.max(5, Math.min(95, nx)); ny = Math.max(5, Math.min(95, ny));
+    state.textX = nx / 100; state.textY = ny / 100;
+    overlay.style.left = nx + '%'; overlay.style.top = ny + '%';
+  };
+  overlay.onpointerup = () => { isDragging = false; if (!isSingle) saveCurrentPhotoText(); };
+  overlay.ondblclick = () => { state.textX = 0.5; state.textY = 0.5; overlay.style.left = '50%'; overlay.style.top = '50%'; if (!isSingle) saveCurrentPhotoText(); };
+
+  if (!isSingle) {
+    $('#navPrev').onclick = () => { saveCurrentPhotoText(); if (state.currentPhotoIdx > 0) state.currentPhotoIdx--; renderPhotoText(); };
+    $('#navNext').onclick = () => { saveCurrentPhotoText(); if (state.currentPhotoIdx < state.photos.length-1) state.currentPhotoIdx++; renderPhotoText(); };
+  }
+  $('#btnBack').onclick = () => { if (!isSingle) saveCurrentPhotoText(); state.step = isSingle ? 0 : 1; render(); };
+  $('#btnNext').onclick = () => { if (!isSingle) saveCurrentPhotoText(); state.step = isSingle ? 2 : 3; render(); };
+}
+
+// ==================== PHOTO PREVIEW + EXPORT ====================
+function renderPhotoPreview() {
+  clearSlideshow();
+  const isSingle = state.isSinglePhoto;
+  const idx = isSingle ? 0 : state.currentPhotoIdx;
+  const showIdx = isSingle ? 0 : state.currentPhotoIdx;
+
+  $('#content').innerHTML = `
+    <div class="preview-area" id="previewArea" style="position:relative;overflow:hidden">
+      <img src="${state.photoUrls[showIdx]}" style="width:100%;height:100%;object-fit:contain" id="mediaPlayer">
+      <div class="text-overlay" id="previewOverlay"></div>
+    </div>
+    <div class="controls">
+      <div class="control-group">
+        <label>导出信息</label>
+        <div style="font-size:12px;color:#aaa">
+          ${state.photos.length} 张照片 · ${isSingle?'单帧 GIF（静图）':'多帧 GIF'}<br>
+          ${!isSingle ? `帧间隔: ${state.frameDelay}ms · ` : ''}画质: 480px
+        </div>
+      </div>
+      ${state.gifBlob ? `<div class="control-group"><img src="${URL.createObjectURL(state.gifBlob)}" style="width:100%;border-radius:6px"></div><div style="font-size:12px;color:#aaa;text-align:center">${(state.gifBlob.size/1024).toFixed(0)}KB</div>` : ''}
+    </div>`;
+  $('#actions').innerHTML = `<button class="btn btn-outline" id="btnBack">上一步</button><button class="btn btn-primary" id="btnExport">导出 GIF</button>`;
+
+  function updateOverlay(i) {
+    const ov = $('#previewOverlay'); if (!ov) return;
+    let ct;
+    if (isSingle) {
+      ct = state.photoTexts[0] || { content: state.textContent, fontName: state.textFont, color: state.textColor, weight: state.textWeight, x: state.textX, y: state.textY, size: state.textSize };
+    } else {
+      ct = getPhotoText(i) || { content: '', fontName: state.textFont, color: state.textColor, weight: state.textWeight, x: state.textX, y: state.textY, size: state.textSize };
+    }
+    ov.style.fontFamily = ct.fontName; ov.style.color = ct.color; ov.style.fontWeight = ct.weight || '700';
+    ov.style.fontSize = (ct.size||36)+'px'; ov.style.left = ((ct.x!=null?ct.x:0.5)*100)+'%';
+    ov.style.top = ((ct.y!=null?ct.y:0.5)*100)+'%'; ov.style.transform = 'translate(-50%,-50%)';
+    ov.textContent = ct.content || '';
+  }
+  updateOverlay(showIdx);
+
+  if (!isSingle) {
+    let sIdx = showIdx;
+    slideshowTimer = setInterval(() => {
+      sIdx = (sIdx + 1) % state.photos.length;
+      const img = $('#mediaPlayer'); if (img) img.src = state.photoUrls[sIdx];
+      updateOverlay(sIdx);
+    }, state.frameDelay);
+  }
+
+  $('#btnBack').onclick = () => { state.gifBlob = null; state.step = isSingle ? 1 : 2; render(); };
+  $('#btnExport').onclick = exportPhotoGIF;
+}
+
+// ==================== EXPORT ====================
+async function exportVideoGIF() {
+  const dur = state.trimEnd - state.trimStart, fps = 8;
+  const totalFrames = Math.min(Math.ceil(dur * fps / state.speed), state.maxFrames);
+  const q = QUALITY_MAP[state.qualityLevel];
+  showToast('正在导出 GIF...');
+
+  const video = document.createElement('video'); video.muted = true; video.preload = 'auto';
+  video.src = state.videoUrl;
+  await new Promise(r => { video.addEventListener('loadeddata', r, { once: true }); });
+
+  const frameW = q.width, ratio = frameW / video.videoWidth, frameH = Math.round(video.videoHeight * ratio);
+  const canvas = document.createElement('canvas'); canvas.width = frameW; canvas.height = frameH;
+  const ctx = canvas.getContext('2d');
+
+  const gif = new GIF({ workers: 2, quality: q.gifQuality, width: frameW, height: frameH, repeat: 0, workerScript: GIF_WORKER_URL || undefined });
+  const totalSourceFrames = Math.ceil(dur * fps / state.speed);
+  const frameDelta = state.speed / fps;
+  const sampleMode = totalSourceFrames > state.maxFrames ? state.sampleMode : 'normal';
+
+  $('#exportProgress').style.display = 'block';
+
+  for (let i = 0; i < totalFrames; i++) {
+    let t;
+    if (sampleMode === 'uniform') {
+      t = state.trimStart + (i / (totalFrames - 1)) * dur;
+    } else {
+      t = state.trimStart + i * frameDelta;
+    }
+    if (Math.abs(video.currentTime - t) > 0.01) { await new Promise(r => { video.addEventListener('seeked', r, { once: true }); video.currentTime = t; }); }
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, frameW, frameH);
+    const vScale = Math.min(frameW / video.videoWidth, frameH / video.videoHeight);
+    const dw = video.videoWidth * vScale, dh = video.videoHeight * vScale;
+    ctx.drawImage(video, (frameW - dw) / 2, (frameH - dh) / 2, dw, dh);
+
+    if (state.textContent) {
+      const fontSize = state.textSize * (frameW / 420);
+      ctx.font = `${state.textWeight} ${fontSize}px ${state.textFont}`;
+      ctx.fillStyle = state.textColor; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 4; ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 2;
+      ctx.fillText(state.textContent, frameW * state.textX, frameH * state.textY);
+      ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+    }
+    gif.addFrame(ctx.getImageData(0, 0, frameW, frameH), { copy: true, delay: 1000 / fps });
+
+    $('#progressFill').style.width = ((i+1)/totalFrames*100) + '%';
+    $('#progressLabel').textContent = `提取帧 ${i+1}/${totalFrames}`;
+  }
+
+  video.remove();
+
+  showToast('正在编码 GIF...');
+  gif.on('progress', (p) => { $('#progressFill').style.width = (p*100)+'%'; $('#progressLabel').textContent = `编码中 ${Math.round(p*100)}%`; });
+  const blob = await new Promise(r => { gif.on('finished', r); gif.render(); });
+  state.gifBlob = blob; $('#exportProgress').style.display = 'none';
+  const ts = new Date().toISOString().replace(/[-:]/g,'').slice(0,15);
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `emoji_${ts}.gif`; a.click();
+  showToast(`导出完成！${(blob.size/1024).toFixed(0)}KB`);
+  renderVideoPreview();
+}
+
+async function exportPhotoGIF() {
+  const q = QUALITY_MAP['medium'];
+  const isSingle = state.isSinglePhoto;
+  showToast('正在导出 GIF...');
+
+  let totalFrames = state.photos.length;
+  const firstImg = await new Promise(r => { const img = new Image(); img.onload = () => r(img); img.src = state.photoUrls[0]; });
+  const frameW = q.width, ratio = frameW / firstImg.width, frameH = Math.round(firstImg.height * ratio);
+  const canvas = document.createElement('canvas'); canvas.width = frameW; canvas.height = frameH;
+  const ctx = canvas.getContext('2d');
+
+  const gif = new GIF({ workers: 2, quality: q.gifQuality, width: frameW, height: frameH, repeat: 0, workerScript: GIF_WORKER_URL || undefined });
+
+  $('#exportProgress').style.display = 'block';
+
+  for (let i = 0; i < totalFrames; i++) {
+    const img = await new Promise(r => { const im = new Image(); im.onload = () => r(im); im.src = state.photoUrls[i]; });
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, frameW, frameH);
+    const scale = Math.min(frameW / img.width, frameH / img.height);
+    const dw = img.width * scale, dh = img.height * scale;
+    ctx.drawImage(img, (frameW - dw) / 2, (frameH - dh) / 2, dw, dh);
+
+    let textConfig;
+    if (isSingle) {
+      textConfig = state.photoTexts[0] || { content: state.textContent, fontName: state.textFont, color: state.textColor, weight: state.textWeight, x: state.textX, y: state.textY, size: state.textSize };
+    } else {
+      textConfig = getPhotoText(i) || { content: '', fontName: state.textFont, color: state.textColor, weight: state.textWeight, x: state.textX, y: state.textY, size: state.textSize };
+    }
+    if (textConfig && textConfig.content) {
+      const fontSize = (textConfig.size || 36) * (frameW / 420);
+      ctx.font = `${textConfig.weight||'700'} ${fontSize}px ${textConfig.fontName}`;
+      ctx.fillStyle = textConfig.color || '#FFFFFF'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 4; ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 2;
+      ctx.fillText(textConfig.content, frameW * (textConfig.x||0.5), frameH * (textConfig.y||0.5));
+      ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+    }
+    const delay = isSingle ? 100 : state.frameDelay;
+    gif.addFrame(ctx.getImageData(0, 0, frameW, frameH), { copy: true, delay });
+
+    $('#progressFill').style.width = ((i+1)/totalFrames*100)+'%';
+    $('#progressLabel').textContent = `合成帧 ${i+1}/${totalFrames}`;
+  }
+
+  showToast('正在编码 GIF...');
+  gif.on('progress', (p) => { $('#progressFill').style.width = (p*100)+'%'; $('#progressLabel').textContent = `编码中 ${Math.round(p*100)}%`; });
+  const blob = await new Promise(r => { gif.on('finished', r); gif.render(); });
+  state.gifBlob = blob; $('#exportProgress').style.display = 'none';
+  const ts = new Date().toISOString().replace(/[-:]/g,'').slice(0,15);
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `emoji_${ts}.gif`; a.click();
+  showToast(`导出完成！${(blob.size/1024).toFixed(0)}KB`);
+  renderPhotoPreview();
+}
+
+// ==================== FILE INPUTS ====================
+$('#fileInput').onchange = function() {
+  const f = this.files[0]; if (!f) return;
+  state.videoFile = f; if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
+  state.videoUrl = URL.createObjectURL(f);
+  const v = document.createElement('video'); v.preload = 'metadata';
+  v.onloadedmetadata = () => {
+    state.videoDuration = v.duration;
+    if (v.duration > 30) { showToast('视频过长，请选择30秒以内的视频', true); state.videoFile = null; state.videoUrl = null; state.videoDuration = 0; this.value = ''; }
+    state.trimStart = 0; state.trimEnd = 0; render();
+  };
+  v.src = state.videoUrl;
+};
+
+$('#photoInput').onchange = function() {
+  const files = Array.from(this.files); if (!files.length) return;
+  clearPhotoData();
+  if (files.length > 20) { showToast('最多选择20张，已自动截取前20张', true); files.splice(20); }
+  state.photos = files; state.photoUrls = files.map(f => URL.createObjectURL(f));
+  state.photoTexts = new Array(files.length).fill(null);
+  state.mediaType = 'photo'; state.step = 0; render(); this.value = '';
+};
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,166 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.emoji.app"
+4    android:versionCode="1"
+5    android:versionName="1.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="29"
+9        android:targetSdkVersion="34" />
+10
+11    <!-- Photo picker permission for API 29-32 -->
+12    <uses-permission
+12-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:6:5-7:38
+13        android:name="android.permission.READ_EXTERNAL_STORAGE"
+13-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:6:22-77
+14        android:maxSdkVersion="32" />
+14-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:7:9-35
+15    <!-- Write permission needed for API 29+ to save to MediaStore -->
+16    <uses-permission
+16-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:9:5-11:40
+17        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+17-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:9:22-78
+18        android:maxSdkVersion="28" />
+18-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:10:9-35
+19
+20    <permission
+20-->[androidx.core:core:1.12.0] C:\Users\lqy\.gradle\caches\transforms-3\2ccd268e0ca2e1cd10ec650ac8067a3e\transformed\core-1.12.0\AndroidManifest.xml:22:5-24:47
+21        android:name="com.emoji.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+21-->[androidx.core:core:1.12.0] C:\Users\lqy\.gradle\caches\transforms-3\2ccd268e0ca2e1cd10ec650ac8067a3e\transformed\core-1.12.0\AndroidManifest.xml:23:9-81
+22        android:protectionLevel="signature" />
+22-->[androidx.core:core:1.12.0] C:\Users\lqy\.gradle\caches\transforms-3\2ccd268e0ca2e1cd10ec650ac8067a3e\transformed\core-1.12.0\AndroidManifest.xml:24:9-44
+23
+24    <uses-permission android:name="com.emoji.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+24-->[androidx.core:core:1.12.0] C:\Users\lqy\.gradle\caches\transforms-3\2ccd268e0ca2e1cd10ec650ac8067a3e\transformed\core-1.12.0\AndroidManifest.xml:26:5-97
+24-->[androidx.core:core:1.12.0] C:\Users\lqy\.gradle\caches\transforms-3\2ccd268e0ca2e1cd10ec650ac8067a3e\transformed\core-1.12.0\AndroidManifest.xml:26:22-94
+25
+26    <application
+26-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:13:5-40:19
+27        android:name="com.emoji.app.EmojiApplication"
+27-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:14:9-41
+28        android:allowBackup="true"
+28-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:15:9-35
+29        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+29-->[androidx.core:core:1.12.0] C:\Users\lqy\.gradle\caches\transforms-3\2ccd268e0ca2e1cd10ec650ac8067a3e\transformed\core-1.12.0\AndroidManifest.xml:28:18-86
+30        android:debuggable="true"
+31        android:extractNativeLibs="false"
+32        android:label="表情包制作"
+32-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:16:9-30
+33        android:supportsRtl="true"
+33-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:17:9-35
+34        android:theme="@style/Theme.HappyEmoji" >
+34-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:18:9-48
+35        <activity
+35-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:20:9-29:20
+36            android:name="com.emoji.app.MainActivity"
+36-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:21:13-41
+37            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+37-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:23:13-87
+38            android:exported="true"
+38-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:22:13-36
+39            android:theme="@style/Theme.HappyEmoji" >
+39-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:24:13-52
+40            <intent-filter>
+40-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:25:13-28:29
+41                <action android:name="android.intent.action.MAIN" />
+41-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:26:17-69
+41-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:26:25-66
+42
+43                <category android:name="android.intent.category.LAUNCHER" />
+43-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:27:17-77
+43-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:27:27-74
+44            </intent-filter>
+45        </activity>
+46
+47        <provider
+48            android:name="androidx.core.content.FileProvider"
+48-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:32:13-62
+49            android:authorities="com.emoji.app.fileprovider"
+49-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:33:13-64
+50            android:exported="false"
+50-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:34:13-37
+51            android:grantUriPermissions="true" >
+51-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:35:13-47
+52            <meta-data
+52-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:36:13-38:54
+53                android:name="android.support.FILE_PROVIDER_PATHS"
+53-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:37:17-67
+54                android:resource="@xml/file_paths" />
+54-->E:\AI project\happy-emoji\app\src\main\AndroidManifest.xml:38:17-51
+55        </provider>
+56
+57        <activity
+57-->[androidx.compose.ui:ui-tooling-android:1.5.4] C:\Users\lqy\.gradle\caches\transforms-3\998fe5af4dd61ac534bc82a3b8e21c03\transformed\ui-tooling-release\AndroidManifest.xml:23:9-25:39
+58            android:name="androidx.compose.ui.tooling.PreviewActivity"
+58-->[androidx.compose.ui:ui-tooling-android:1.5.4] C:\Users\lqy\.gradle\caches\transforms-3\998fe5af4dd61ac534bc82a3b8e21c03\transformed\ui-tooling-release\AndroidManifest.xml:24:13-71
+59            android:exported="true" />
+59-->[androidx.compose.ui:ui-tooling-android:1.5.4] C:\Users\lqy\.gradle\caches\transforms-3\998fe5af4dd61ac534bc82a3b8e21c03\transformed\ui-tooling-release\AndroidManifest.xml:25:13-36
+60
+61        <provider
+61-->[androidx.emoji2:emoji2:1.4.0] C:\Users\lqy\.gradle\caches\transforms-3\da3398c4e0ab94412c8944ea49b75246\transformed\emoji2-1.4.0\AndroidManifest.xml:24:9-32:20
+62            android:name="androidx.startup.InitializationProvider"
+62-->[androidx.emoji2:emoji2:1.4.0] C:\Users\lqy\.gradle\caches\transforms-3\da3398c4e0ab94412c8944ea49b75246\transformed\emoji2-1.4.0\AndroidManifest.xml:25:13-67
+63            android:authorities="com.emoji.app.androidx-startup"
+63-->[androidx.emoji2:emoji2:1.4.0] C:\Users\lqy\.gradle\caches\transforms-3\da3398c4e0ab94412c8944ea49b75246\transformed\emoji2-1.4.0\AndroidManifest.xml:26:13-68
+64            android:exported="false" >
+64-->[androidx.emoji2:emoji2:1.4.0] C:\Users\lqy\.gradle\caches\transforms-3\da3398c4e0ab94412c8944ea49b75246\transformed\emoji2-1.4.0\AndroidManifest.xml:27:13-37
+65            <meta-data
+65-->[androidx.emoji2:emoji2:1.4.0] C:\Users\lqy\.gradle\caches\transforms-3\da3398c4e0ab94412c8944ea49b75246\transformed\emoji2-1.4.0\AndroidManifest.xml:29:13-31:52
+66                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+66-->[androidx.emoji2:emoji2:1.4.0] C:\Users\lqy\.gradle\caches\transforms-3\da3398c4e0ab94412c8944ea49b75246\transformed\emoji2-1.4.0\AndroidManifest.xml:30:17-75
+67                android:value="androidx.startup" />
+67-->[androidx.emoji2:emoji2:1.4.0] C:\Users\lqy\.gradle\caches\transforms-3\da3398c4e0ab94412c8944ea49b75246\transformed\emoji2-1.4.0\AndroidManifest.xml:31:17-49
+68            <meta-data
+68-->[androidx.lifecycle:lifecycle-process:2.6.2] C:\Users\lqy\.gradle\caches\transforms-3\b8d11ad8426ba34454d5792641948162\transformed\lifecycle-process-2.6.2\AndroidManifest.xml:29:13-31:52
+69                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+69-->[androidx.lifecycle:lifecycle-process:2.6.2] C:\Users\lqy\.gradle\caches\transforms-3\b8d11ad8426ba34454d5792641948162\transformed\lifecycle-process-2.6.2\AndroidManifest.xml:30:17-78
+70                android:value="androidx.startup" />
+70-->[androidx.lifecycle:lifecycle-process:2.6.2] C:\Users\lqy\.gradle\caches\transforms-3\b8d11ad8426ba34454d5792641948162\transformed\lifecycle-process-2.6.2\AndroidManifest.xml:31:17-49
+71            <meta-data
+71-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:29:13-31:52
+72                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+72-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:30:17-85
+73                android:value="androidx.startup" />
+73-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:31:17-49
+74        </provider>
+75
+76        <receiver
+76-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:34:9-52:20
+77            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+77-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:35:13-76
+78            android:directBootAware="false"
+78-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:36:13-44
+79            android:enabled="true"
+79-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:37:13-35
+80            android:exported="true"
+80-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:38:13-36
+81            android:permission="android.permission.DUMP" >
+81-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:39:13-57
+82            <intent-filter>
+82-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:40:13-42:29
+83                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+83-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:41:17-91
+83-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:41:25-88
+84            </intent-filter>
+85            <intent-filter>
+85-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:43:13-45:29
+86                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+86-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:44:17-85
+86-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:44:25-82
+87            </intent-filter>
+88            <intent-filter>
+88-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:46:13-48:29
+89                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+89-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:47:17-88
+89-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:47:25-85
+90            </intent-filter>
+91            <intent-filter>
+91-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:49:13-51:29
+92                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+92-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:50:17-95
+92-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\lqy\.gradle\caches\transforms-3\76dba03a24495dc966af796d5f293c95\transformed\profileinstaller-1.3.1\AndroidManifest.xml:50:25-92
+93            </intent-filter>
+94        </receiver>
+95    </application>
+96
+97</manifest>

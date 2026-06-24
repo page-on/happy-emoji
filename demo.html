@@ -411,7 +411,7 @@ function renderStep1() {
             <div class="trim-time-label">${formatTime(state.trimStart)}</div>
           </div>
           <div class="trim-handle" id="handleEnd" style="left:${state.trimEnd / state.videoDuration * 100}%">
-            <div class="trim-time-label">${formatTime(state.trimEnd)}</div>
+            <div class="trim-time-label">${formatTime(state.trimEnd - state.trimStart)}</div>
           </div>
         </div>
         <div style="margin-top:8px;display:flex;align-items:center;gap:6px;font-size:11px">

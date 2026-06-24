@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background_dark">#FF1A1A2E</color>
+    <color name="error">#FFF44336</color>
+    <color name="on_primary">#FFFFFFFF</color>
+    <color name="primary">#FF7C4DFF</color>
+    <color name="success">#FF4CAF50</color>
+    <color name="surface_dark">#FF2A2A3E</color>
+    <color name="text_primary">#FFEEEEEE</color>
+    <color name="text_secondary">#FFAAAAAA</color>
+    <string name="app_name">表情包制作</string>
+    <style name="Theme.HappyEmoji" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@color/background_dark</item>
+        <item name="android:navigationBarColor">@color/background_dark</item>
+    </style>
+</resources>
