@@ -1,0 +1,45 @@
+workflows:
+  ios-build:
+    name: Happy Emoji iOS Build
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      xcode: latest
+      ios_sdk: iphoneos
+      groups:
+        - ios_signing
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+        - pattern: "ios/**"
+          include: true
+    scripts:
+      - name: Install XcodeGen
+        script: brew install xcodegen
+      - name: Generate Xcode project
+        script: |
+          cd ios
+          xcodegen generate --spec project.yml
+      - name: Build iOS app
+        script: |
+          cd ios
+          xcodebuild clean build \
+            -project HappyEmoji.xcodeproj \
+            -scheme HappyEmoji \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+    artifacts:
+      - ios/build/*.ipa
+      - ios/build/*.app
+    publishing:
+      email:
+        recipients:
+          - $EMAIL

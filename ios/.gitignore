@@ -1,0 +1,26 @@
+# Xcode
+*.xcworkspace
+xcuserdata/
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+
+# Build
+build/
+*.ipa
+*.app
+*.dSYM.zip
+*.dSYM
+
+# XcodeGen
+*.xcodeproj
+!*.pbxproj.backup
+
+# Swift
+.swiftpm/
+
+# CocoaPods
+Pods/
+
+# Misc
+.DS_Store

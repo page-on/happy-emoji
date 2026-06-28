@@ -1,0 +1,30 @@
+name: HappyEmoji
+options:
+  bundleIdPrefix: com.happyemoji
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "15.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    TARGETED_DEVICE_FAMILY: "1"
+    INFOPLIST_FILE: HappyEmoji/Info.plist
+targets:
+  HappyEmoji:
+    type: application
+    platform: iOS
+    sources:
+      - path: HappyEmoji
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.happyemoji.app
+        INFOPLIST_FILE: HappyEmoji/Info.plist
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+    preBuildScripts:
+      - name: "SwiftLint"
+        script: |
+          if which swiftlint > /dev/null; then
+            swiftlint
+          fi
+        basedOnDependencyAnalysis: false
